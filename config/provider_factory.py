@@ -95,7 +95,9 @@ def get_provider_config(config: dict[str, Any]) -> ProviderConfig:
     providers = config.get("providers", {})
 
     if active not in providers:
-        raise ValueError(f"Provider '{active}' not found in config. Available: {list(providers.keys())}")
+        raise ValueError(
+            f"Provider '{active}' not found in config. Available: {list(providers.keys())}"
+        )
 
     provider_cfg = providers[active]
 
@@ -103,7 +105,8 @@ def get_provider_config(config: dict[str, Any]) -> ProviderConfig:
         name=active,
         model_id=provider_cfg.get("model_id", ""),
         temperature=provider_cfg.get("temperature", 0.1),
-        max_tokens=provider_cfg.get("max_tokens") or provider_cfg.get("max_output_tokens"),
+        max_tokens=provider_cfg.get("max_tokens")
+        or provider_cfg.get("max_output_tokens"),
         options=provider_cfg.get("options", {}),
         host=provider_cfg.get("host"),
         api_key=provider_cfg.get("api_key"),

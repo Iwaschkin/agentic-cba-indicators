@@ -17,9 +17,6 @@ Configuration via config/providers.yaml.
 
 from pathlib import Path
 
-from strands import Agent
-from strands.agent.conversation_manager import SlidingWindowConversationManager
-
 from config import (
     AgentConfig,
     ProviderConfig,
@@ -29,6 +26,8 @@ from config import (
     load_config,
     print_provider_info,
 )
+from strands import Agent
+from strands.agent.conversation_manager import SlidingWindowConversationManager
 from tools import (
     compare_commodity_producers,
     compare_gender_gaps,
@@ -386,9 +385,13 @@ def main():
             print("Usage: python main.py [OPTIONS]")
             print("\nOptions:")
             print("  --config=PATH       Path to providers.yaml config file")
-            print("  --provider=NAME     Override active provider (ollama, anthropic, openai, bedrock, gemini)")
+            print(
+                "  --provider=NAME     Override active provider (ollama, anthropic, openai, bedrock, gemini)"
+            )
             print("\nExamples:")
-            print("  python main.py                          # Use default config (Ollama)")
+            print(
+                "  python main.py                          # Use default config (Ollama)"
+            )
             print("  python main.py --provider=anthropic     # Use Anthropic Claude")
             print("  python main.py --provider=openai        # Use OpenAI GPT")
             print("  python main.py --provider=bedrock       # Use AWS Bedrock")
@@ -404,7 +407,9 @@ def main():
             config_path=config_path,
             provider_override=provider_override,
         )
-        tool_count = len(FULL_TOOLS) if agent_config.tool_set == "full" else len(REDUCED_TOOLS)
+        tool_count = (
+            len(FULL_TOOLS) if agent_config.tool_set == "full" else len(REDUCED_TOOLS)
+        )
 
         print_banner(tool_count=tool_count, provider_config=provider_config)
         print("✅ Agent ready!\n")

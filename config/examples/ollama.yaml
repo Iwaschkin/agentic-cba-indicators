@@ -16,8 +16,8 @@ providers:
     model_id: "llama3.1:latest"
     temperature: 0.1
     options:
-      num_ctx: 16384  # Context window
-      
+      num_ctx: 16384 # Context window
+
     # Alternative models:
     # model_id: "qwen2.5:14b-instruct"  # Better for larger tool sets
     # model_id: "mistral:latest"

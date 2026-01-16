@@ -24,7 +24,7 @@ providers:
     model_id: "llama3.1:latest"
     temperature: 0.1
     options:
-      num_ctx: 16384  # Context window size
+      num_ctx: 16384 # Context window size
 
   # ---------------------------------------------------------------------------
   # Anthropic - Claude models
@@ -74,6 +74,6 @@ agent:
   # Tool set to use: "reduced" (19 tools) or "full" (52 tools)
   # Use "reduced" for smaller models, "full" for larger cloud models
   tool_set: reduced
-  
+
   # Conversation window size (number of message pairs to keep)
   conversation_window: 5
