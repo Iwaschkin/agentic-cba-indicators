@@ -2,13 +2,14 @@
 
 ## Project Overview
 
-A CLI chatbot that queries weather, climate, socio-economic data, and **CBA ME Indicators** using the **Strands Agents SDK** with **Ollama** as the local AI provider. Includes a local RAG knowledge base using ChromaDB for semantic search over indicator and measurement method data.
+A CLI chatbot that queries weather, climate, socio-economic data, and **CBA ME Indicators** using the **Strands Agents SDK**. Supports multiple AI providers: **Ollama** (local), **Anthropic**, **OpenAI**, **AWS Bedrock**, and **Google Gemini**. Includes a local RAG knowledge base using ChromaDB for semantic search over indicator and measurement method data.
 
 ## Technology Stack
 
 - **Language:** Python 3.11+
 - **Package Manager:** uv
-- **AI Framework:** [strands-agents](https://strandsagents.com/) with Ollama model provider
+- **AI Framework:** [strands-agents](https://strandsagents.com/) with multi-provider support
+- **AI Providers:** Ollama (default), Anthropic, OpenAI, AWS Bedrock, Google Gemini
 - **Vector Store:** ChromaDB (local persistence in `kb_data/`)
 - **Embeddings:** Ollama `nomic-embed-text` model
 - **APIs:** Open-Meteo (weather/climate), World Bank API, REST Countries API
@@ -20,17 +21,21 @@ A CLI chatbot that queries weather, climate, socio-economic data, and **CBA ME I
 uv sync
 .venv\Scripts\activate  # Windows
 
-# Ensure Ollama is running with required models
-ollama pull llama3.1        # Chat model
-ollama pull nomic-embed-text # Embedding model
-ollama serve
+# For cloud providers, install extras:
+uv add 'strands-agents[anthropic]'  # Anthropic
+uv add 'strands-agents[openai]'     # OpenAI
+uv add 'strands-agents[bedrock]'    # AWS Bedrock
+uv add 'strands-agents[gemini]'     # Google Gemini
 
 # Ingest knowledge base (first time or after Excel updates)
 python scripts/ingest_excel.py
 
 # Run the chatbot
-python main.py
-python main.py --model=mistral --host=http://localhost:11434
+python main.py                        # Uses config/providers.yaml (Ollama default)
+python main.py --provider=anthropic   # Use Anthropic (needs ANTHROPIC_API_KEY)
+python main.py --provider=openai      # Use OpenAI (needs OPENAI_API_KEY)
+python main.py --provider=bedrock     # Use AWS Bedrock (needs AWS credentials)
+python main.py --provider=gemini      # Use Google Gemini (needs GOOGLE_API_KEY)
 ```
 
 ## Project Structure
@@ -38,12 +43,19 @@ python main.py --model=mistral --host=http://localhost:11434
 ```
 strands/
 ├── main.py              # CLI entry point, agent configuration
+├── config/
+│   ├── providers.yaml   # Provider configuration (API keys, models)
+│   ├── provider_factory.py  # Model creation factory
+│   ├── __init__.py
+│   └── examples/        # Example configs per provider
 ├── tools/               # Custom Strands tools
 │   ├── __init__.py      # Exports all tools
 │   ├── weather.py       # Open-Meteo current weather & forecast
 │   ├── climate.py       # Climate normals & historical data
 │   ├── socioeconomic.py # World Bank & REST Countries APIs
 │   └── knowledge_base.py# ChromaDB RAG for CBA indicators
+├── prompts/
+│   └── system_prompt_minimal.md  # System prompt
 ├── scripts/
 │   └── ingest_excel.py  # Excel → ChromaDB ingestion
 ├── cba_inputs/          # Source data files
@@ -76,19 +88,39 @@ def get_current_weather(city: str) -> str:
     # Tool implementation...
 ```
 
-### Agent Configuration
+### Multi-Provider Configuration
 
-The agent is configured in `main.py` with Ollama and custom tools:
+Provider settings are in `config/providers.yaml`:
+
+```yaml
+active_provider: ollama  # or anthropic, openai, bedrock, gemini
+
+providers:
+  ollama:
+    host: "http://localhost:11434"
+    model_id: "llama3.1:latest"
+    temperature: 0.1
+    
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}  # Environment variable
+    model_id: "claude-sonnet-4-20250514"
+    max_tokens: 8192
+
+agent:
+  tool_set: reduced  # "reduced" (19 tools) or "full" (52 tools)
+  conversation_window: 5
+```
+
+### Agent Creation
+
+The agent is created from config via the factory:
 
 ```python
-from strands import Agent
-from strands.models.ollama import OllamaModel
+from config import create_agent_from_config
 
-agent = Agent(
-    model=OllamaModel(host="http://localhost:11434", model_id="llama3.1"),
-    system_prompt=SYSTEM_PROMPT,
-    tools=[get_current_weather, get_weather_forecast, ...],
-)
+agent, provider_config, agent_config = create_agent_from_config()
+# Or with override:
+agent, _, _ = create_agent_from_config(provider_override="anthropic")
 ```
 
 ### Adding New Tools
@@ -96,7 +128,7 @@ agent = Agent(
 1. Create tool in `tools/` with `@tool` decorator
 2. Include clear docstring with Args/Returns (used by LLM)
 3. Export in `tools/__init__.py`
-4. Add to agent's tools list in `main.py`
+4. Add to `REDUCED_TOOLS` or `FULL_TOOLS` in `main.py`
 
 ### Knowledge Base (RAG) Pattern
 

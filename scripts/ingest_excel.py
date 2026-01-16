@@ -21,13 +21,20 @@ Collections created:
     - methods: One document per indicator with ALL methods grouped (223 docs, id=105 has none)
 """
 
+from __future__ import annotations
+
 import argparse
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import chromadb
 import httpx
+
+if TYPE_CHECKING:
+    from chromadb.api import ClientAPI
+
 import pandas as pd
 
 # =============================================================================
@@ -174,7 +181,9 @@ class IndicatorDoc:
             principle_names = [
                 f"{pid}. {PRINCIPLES[pid]}" for pid in sorted(self.principles)
             ]
-            parts.append(f"Principles covered ({len(self.principles)}): {', '.join(principle_names)}")
+            parts.append(
+                f"Principles covered ({len(self.principles)}): {', '.join(principle_names)}"
+            )
 
         # Add criteria coverage with names and markings
         if self.criteria:
@@ -182,7 +191,9 @@ class IndicatorDoc:
             for cid in sorted(self.criteria.keys()):
                 marking = self.criteria[cid]
                 marking_label = "(Primary)" if marking == "P" else ""
-                criteria_parts.append(f"{cid} {CRITERIA.get(cid, '')} {marking_label}".strip())
+                criteria_parts.append(
+                    f"{cid} {CRITERIA.get(cid, '')} {marking_label}".strip()
+                )
             parts.append(f"Criteria covered ({len(self.criteria)}):")
             for cp in criteria_parts:
                 parts.append(f"  - {cp}")
@@ -379,7 +390,7 @@ def extract_citations(row: pd.Series) -> list[str]:
 
 def extract_principles_and_criteria(row: pd.Series) -> tuple[list[str], dict[str, str]]:
     """Extract principle and criteria coverage from a row.
-    
+
     Returns:
         Tuple of (principles list, criteria dict)
         - principles: List of principle IDs that apply (e.g., ["1", "4", "7"])
@@ -387,19 +398,19 @@ def extract_principles_and_criteria(row: pd.Series) -> tuple[list[str], dict[str
     """
     principles = []
     criteria = {}
-    
+
     # Extract principles (marked with x, S, or ?)
     for pid, col_name in PRINCIPLE_COLUMNS.items():
         val = safe_str(row.get(col_name, "")).lower()
         if val in ["x", "s", "?"]:
             principles.append(pid)
-    
+
     # Extract criteria (marked with P, x, S, or ?)
     for cid, col_name in CRITERIA_COLUMNS.items():
         val = safe_str(row.get(col_name, ""))
         if val.upper() in ["P", "X", "S", "?"]:
             criteria[cid] = val.upper()
-    
+
     return principles, criteria
 
 
@@ -512,7 +523,7 @@ def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
         )
         if response.status_code != 200:
             # Fall back to individual embedding if batch fails
-            print(f"      Batch failed, falling back to individual embedding...")
+            print("      Batch failed, falling back to individual embedding...")
             embeddings = []
             for i, text in enumerate(truncated_texts):
                 try:
@@ -553,14 +564,14 @@ def embed_documents(documents: list[str], verbose: bool = False) -> list[list[fl
 # =============================================================================
 
 
-def get_chroma_client() -> chromadb.PersistentClient:
+def get_chroma_client() -> "ClientAPI":
     """Get or create persistent ChromaDB client."""
     KB_PATH.mkdir(parents=True, exist_ok=True)
     return chromadb.PersistentClient(path=str(KB_PATH))
 
 
 def upsert_indicators(
-    client: chromadb.PersistentClient,
+    client: "ClientAPI",
     indicators: list[IndicatorDoc],
     verbose: bool = False,
     dry_run: bool = False,
@@ -582,19 +593,19 @@ def upsert_indicators(
     print(f"  Embedding {len(documents)} indicator documents...")
     embeddings = embed_documents(documents, verbose=verbose)
 
-    print(f"  Upserting to 'indicators' collection...")
+    print("  Upserting to 'indicators' collection...")
     collection.upsert(
         ids=ids,
-        embeddings=embeddings,
+        embeddings=embeddings,  # type: ignore[arg-type]
         documents=documents,
-        metadatas=metadatas,
+        metadatas=metadatas,  # type: ignore[arg-type]
     )
 
     return len(indicators)
 
 
 def upsert_methods(
-    client: chromadb.PersistentClient,
+    client: "ClientAPI",
     methods_groups: list[MethodsGroupDoc],
     verbose: bool = False,
     dry_run: bool = False,
@@ -616,12 +627,12 @@ def upsert_methods(
     print(f"  Embedding {len(documents)} method group documents...")
     embeddings = embed_documents(documents, verbose=verbose)
 
-    print(f"  Upserting to 'methods' collection...")
+    print("  Upserting to 'methods' collection...")
     collection.upsert(
         ids=ids,
-        embeddings=embeddings,
+        embeddings=embeddings,  # type: ignore[arg-type]
         documents=documents,
-        metadatas=metadatas,
+        metadatas=metadatas,  # type: ignore[arg-type]
     )
 
     return len(methods_groups)
@@ -661,7 +672,7 @@ def ingest(
         except Exception as e:
             summary["errors"].append(f"Ollama connection failed: {e}")
             print(f"  ✗ Ollama error: {e}")
-            print(f"  Make sure Ollama is running: ollama serve")
+            print("  Make sure Ollama is running: ollama serve")
             print(f"  And the model is pulled: ollama pull {EMBEDDING_MODEL}")
             return summary
 
@@ -795,7 +806,7 @@ Examples:
         print(f"Indicators without methods: {summary['missing_methods_indicator_ids']}")
 
     if summary["errors"]:
-        print(f"\nErrors encountered:")
+        print("\nErrors encountered:")
         for err in summary["errors"]:
             print(f"  - {err}")
         sys.exit(1)

@@ -6,11 +6,15 @@ Data is ingested from Excel files using scripts/ingest_excel.py.
 """
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import chromadb
 import httpx
 
 from strands import tool
+
+if TYPE_CHECKING:
+    from chromadb.api import ClientAPI
 
 # Knowledge base storage path
 KB_PATH = Path(__file__).parent.parent / "kb_data"
@@ -30,7 +34,7 @@ def _get_embedding(text: str) -> list[float]:
         return response.json()["embeddings"][0]
 
 
-def _get_chroma_client() -> chromadb.PersistentClient:
+def _get_chroma_client() -> "ClientAPI":
     """Get or create ChromaDB client."""
     KB_PATH.mkdir(parents=True, exist_ok=True)
     return chromadb.PersistentClient(path=str(KB_PATH))
@@ -76,19 +80,25 @@ def search_indicators(query: str, n_results: int = 5) -> str:
             include=["documents", "metadatas", "distances"],
         )
 
-        if not results["documents"][0]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+        dists = results.get("distances")
+
+        if not docs or not docs[0]:
             return "No matching indicators found."
 
-        output_lines = [f"Found {len(results['documents'][0])} matching indicators:\n"]
+        output_lines = [f"Found {len(docs[0])} matching indicators:\n"]
 
         for i, (doc, meta, dist) in enumerate(
             zip(
-                results["documents"][0],
-                results["metadatas"][0],
-                results["distances"][0],
+                docs[0],
+                metas[0] if metas else [],
+                dists[0] if dists else [],
             ),
             1,
         ):
+            meta = cast(dict[str, Any], meta)
+            dist = cast(float, dist)
             similarity = 1 - (dist / 2)  # Convert distance to similarity
             output_lines.append(f"--- Result {i} (relevance: {similarity:.0%}) ---")
             output_lines.append(f"ID: {meta.get('id', 'N/A')}")
@@ -140,21 +150,25 @@ def search_methods(query: str, n_results: int = 5) -> str:
             include=["documents", "metadatas", "distances"],
         )
 
-        if not results["documents"][0]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+        dists = results.get("distances")
+
+        if not docs or not docs[0]:
             return "No matching methods found."
 
-        output_lines = [
-            f"Found {len(results['documents'][0])} matching method groups:\n"
-        ]
+        output_lines = [f"Found {len(docs[0])} matching method groups:\n"]
 
         for i, (doc, meta, dist) in enumerate(
             zip(
-                results["documents"][0],
-                results["metadatas"][0],
-                results["distances"][0],
+                docs[0],
+                metas[0] if metas else [],
+                dists[0] if dists else [],
             ),
             1,
         ):
+            meta = cast(dict[str, Any], meta)
+            dist = cast(float, dist)
             similarity = 1 - (dist / 2)
             output_lines.append(f"--- Result {i} (relevance: {similarity:.0%}) ---")
             output_lines.append(f"Indicator ID: {meta.get('indicator_id', 'N/A')}")
@@ -198,11 +212,14 @@ def get_indicator_details(indicator_id: int) -> str:
             ids=[f"indicator:{indicator_id}"], include=["documents", "metadatas"]
         )
 
-        if not indicator_results["documents"]:
+        ind_docs = indicator_results.get("documents")
+        ind_metas = indicator_results.get("metadatas")
+
+        if not ind_docs or not ind_docs[0]:
             return f"Indicator ID {indicator_id} not found."
 
-        doc = indicator_results["documents"][0]
-        meta = indicator_results["metadatas"][0]
+        doc = ind_docs[0]
+        meta = cast(dict[str, Any], ind_metas[0] if ind_metas else {})
 
         output = [
             f"=== Indicator {indicator_id} ===",
@@ -210,13 +227,13 @@ def get_indicator_details(indicator_id: int) -> str:
             f"Class: {meta.get('class', 'N/A')}",
             f"Unit: {meta.get('unit', 'N/A')}",
             f"\nDescription:\n{doc}",
-            f"\nMeasurement Categories:",
+            "\nMeasurement Categories:",
             f"  - Field methods: {'Yes' if meta.get('field_methods') else 'No'}",
             f"  - Lab methods: {'Yes' if meta.get('lab_methods') else 'No'}",
             f"  - Remote sensing: {'Yes' if meta.get('remote_sensing') else 'No'}",
             f"  - Social/participatory: {'Yes' if meta.get('social_participatory') else 'No'}",
             f"  - Production audits: {'Yes' if meta.get('production_audits') else 'No'}",
-            f"\nPrinciple Coverage:",
+            "\nPrinciple Coverage:",
             f"  Total principles: {meta.get('total_principles', 0)}",
             f"  Total criteria: {meta.get('total_criteria', 0)}",
         ]
@@ -228,9 +245,12 @@ def get_indicator_details(indicator_id: int) -> str:
             include=["documents", "metadatas"],
         )
 
-        if method_results["documents"]:
-            mmeta = method_results["metadatas"][0]
-            mdoc = method_results["documents"][0]
+        method_docs = method_results.get("documents")
+        method_metas = method_results.get("metadatas")
+
+        if method_docs and method_docs[0]:
+            mmeta = cast(dict[str, Any], method_metas[0] if method_metas else {})
+            mdoc = method_docs[0]
             output.append(
                 f"\n=== Measurement Methods ({mmeta.get('method_count', 0)} total) ==="
             )
@@ -320,21 +340,25 @@ def search_usecases(query: str, n_results: int = 5) -> str:
             include=["documents", "metadatas", "distances"],
         )
 
-        if not results["documents"][0]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+        dists = results.get("distances")
+
+        if not docs or not docs[0]:
             return "No matching use cases found."
 
-        output_lines = [
-            f"Found {len(results['documents'][0])} matching use case documents:\n"
-        ]
+        output_lines = [f"Found {len(docs[0])} matching use case documents:\n"]
 
         for i, (doc, meta, dist) in enumerate(
             zip(
-                results["documents"][0],
-                results["metadatas"][0],
-                results["distances"][0],
+                docs[0],
+                metas[0] if metas else [],
+                dists[0] if dists else [],
             ),
             1,
         ):
+            meta = cast(dict[str, Any], meta)
+            dist = cast(float, dist)
             similarity = 1 - (dist / 2)
             doc_type = meta.get("doc_type", "unknown")
 
@@ -346,7 +370,7 @@ def search_usecases(query: str, n_results: int = 5) -> str:
             output_lines.append(f"Commodity: {meta.get('commodity', 'N/A')}")
 
             if doc_type == "overview":
-                output_lines.append(f"Type: Project Overview")
+                output_lines.append("Type: Project Overview")
                 output_lines.append(f"Outcomes: {meta.get('outcome_count', 0)}")
             else:
                 output_lines.append(f"Type: Outcome {meta.get('outcome_id', 'N/A')}")
@@ -386,14 +410,18 @@ def get_usecase_details(use_case_slug: str) -> str:
             include=["documents", "metadatas"],
         )
 
-        if not results["documents"]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+
+        if not docs:
             return f"Use case '{use_case_slug}' not found."
 
         # Separate overview from outcomes
         overview = None
-        outcomes = []
+        outcomes: list[tuple[str, dict[str, Any]]] = []
 
-        for doc, meta in zip(results["documents"], results["metadatas"]):
+        for doc, meta in zip(docs, metas or []):
+            meta = cast(dict[str, Any], meta)
             if meta.get("doc_type") == "overview":
                 overview = (doc, meta)
             else:
@@ -402,7 +430,7 @@ def get_usecase_details(use_case_slug: str) -> str:
         # Sort outcomes by outcome_id
         outcomes.sort(key=lambda x: x[1].get("outcome_id", ""))
 
-        output = []
+        output: list[str] = []
 
         if overview:
             doc, meta = overview
@@ -440,7 +468,8 @@ def _resolve_indicator_id(indicator: str | int) -> tuple[int | None, str | None]
     if isinstance(indicator, int):
         collection = _get_collection("indicators")
         results = collection.get(ids=[f"indicator:{indicator}"], include=["metadatas"])
-        if results["metadatas"]:
+        metas = results.get("metadatas")
+        if metas and metas[0]:
             return indicator, None
         return None, f"Indicator ID {indicator} not found"
 
@@ -461,22 +490,26 @@ def _resolve_indicator_id(indicator: str | int) -> tuple[int | None, str | None]
         include=["metadatas", "documents", "distances"],
     )
 
-    if not results["metadatas"][0]:
+    metas = results.get("metadatas")
+    dists = results.get("distances")
+    docs = results.get("documents")
+
+    if not metas or not metas[0]:
         return None, f"No indicator found matching '{indicator}'"
 
     # Check if it's a reasonable match (distance < 0.7 means ~65%+ similarity)
-    distance = results["distances"][0][0]
+    distance = cast(float, dists[0][0]) if dists else 1.0
     if distance > 0.7:
         return (
             None,
             f"No close match found for '{indicator}'. Best match was too different.",
         )
 
-    meta = results["metadatas"][0][0]
-    indicator_id = meta.get("id")
+    meta = cast(dict[str, Any], metas[0][0])
+    indicator_id = cast(int, meta.get("id"))
 
     # Extract indicator name from document
-    doc = results["documents"][0][0]
+    doc = docs[0][0] if docs else ""
     name_line = [line for line in doc.split("\n") if line.startswith("Indicator:")]
     indicator_name = (
         name_line[0].replace("Indicator:", "").strip() if name_line else "Unknown"
@@ -506,7 +539,7 @@ def get_usecases_by_indicator(indicator: str) -> str:
         indicator_id, name_or_error = _resolve_indicator_id(indicator)
 
         if indicator_id is None:
-            return name_or_error
+            return name_or_error or "Unknown error"
 
         # If we got a name back, show what we matched
         matched_info = ""
@@ -524,13 +557,17 @@ def get_usecases_by_indicator(indicator: str) -> str:
             include=["documents", "metadatas"],
         )
 
-        if not results["documents"]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+
+        if not docs:
             return "No outcome documents found."
 
         # Filter for outcomes containing this indicator
-        matching = []
-        for doc, meta in zip(results["documents"], results["metadatas"]):
-            indicator_ids_json = meta.get("indicator_ids_json", "[]")
+        matching: list[tuple[str, dict[str, Any]]] = []
+        for doc, meta in zip(docs, metas or []):
+            meta = cast(dict[str, Any], meta)
+            indicator_ids_json = str(meta.get("indicator_ids_json", "[]"))
             try:
                 indicator_ids = json.loads(indicator_ids_json)
                 if indicator_id in indicator_ids:
@@ -639,12 +676,17 @@ def find_indicators_by_principle(
     else:
         # Try name match (case-insensitive)
         for pid, pname in PRINCIPLES.items():
-            if pname.lower() in principle_input.lower() or principle_input.lower() in pname.lower():
+            if (
+                pname.lower() in principle_input.lower()
+                or principle_input.lower() in pname.lower()
+            ):
                 principle_id = pid
                 break
 
     if not principle_id:
-        principle_list = "\n".join([f"  {pid}. {pname}" for pid, pname in PRINCIPLES.items()])
+        principle_list = "\n".join(
+            [f"  {pid}. {pname}" for pid, pname in PRINCIPLES.items()]
+        )
         return f"Unknown principle: '{principle}'\n\nAvailable principles:\n{principle_list}"
 
     principle_name = PRINCIPLES[principle_id]
@@ -661,11 +703,16 @@ def find_indicators_by_principle(
             include=["documents", "metadatas"],
         )
 
-        if not results["documents"]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+
+        if not docs:
             return f"No indicators found covering Principle {principle_id}: {principle_name}"
 
         # Sort by total criteria covered (descending)
-        items = list(zip(results["documents"], results["metadatas"]))
+        items: list[tuple[str, dict[str, Any]]] = [
+            (doc, cast(dict[str, Any], meta)) for doc, meta in zip(docs, metas or [])
+        ]
         items.sort(key=lambda x: x[1].get("total_criteria", 0), reverse=True)
 
         # Limit results
@@ -682,11 +729,15 @@ def find_indicators_by_principle(
 
             # Extract indicator name from document
             doc_lines = doc.split("\n")
-            indicator_name = doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+            indicator_name = (
+                doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+            )
 
             output.append(f"[{indicator_id}] {indicator_name}")
             output.append(f"    Component: {component} | Class: {ind_class}")
-            output.append(f"    Principles: {meta.get('total_principles', 0)} | Criteria: {meta.get('total_criteria', 0)}")
+            output.append(
+                f"    Principles: {meta.get('total_principles', 0)} | Criteria: {meta.get('total_criteria', 0)}"
+            )
 
             if include_criteria:
                 # Show which criteria this indicator covers for this principle
@@ -745,7 +796,7 @@ def find_feasible_methods(
     indicator_id, name_or_error = _resolve_indicator_id(indicator)
 
     if indicator_id is None:
-        return name_or_error
+        return name_or_error or "Unknown error"
 
     try:
         collection = _get_collection("methods")
@@ -759,16 +810,19 @@ def find_feasible_methods(
             include=["documents", "metadatas"],
         )
 
-        if not results["documents"]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+
+        if not docs or not docs[0]:
             return f"No measurement methods found for indicator {indicator_id}."
 
-        doc = results["documents"][0]
-        meta = results["metadatas"][0]
+        doc = docs[0]
+        meta = cast(dict[str, Any], metas[0] if metas else {})
 
         # Parse the document to extract individual methods
         # The document format has "--- Method N ---" separators
         method_sections = doc.split("--- Method ")
-        methods = []
+        methods: list[dict[str, str]] = []
 
         for section in method_sections[1:]:  # Skip header
             lines = section.strip().split("\n")
@@ -776,9 +830,13 @@ def find_feasible_methods(
 
             for line in lines[1:]:
                 if line.startswith("Method (General):"):
-                    method_info["general"] = line.replace("Method (General):", "").strip()
+                    method_info["general"] = line.replace(
+                        "Method (General):", ""
+                    ).strip()
                 elif line.startswith("Method (Specific):"):
-                    method_info["specific"] = line.replace("Method (Specific):", "").strip()
+                    method_info["specific"] = line.replace(
+                        "Method (Specific):", ""
+                    ).strip()
                 elif line.startswith("Notes:"):
                     method_info["notes"] = line.replace("Notes:", "").strip()
                 elif line.startswith("Evaluation:"):
@@ -786,7 +844,9 @@ def find_feasible_methods(
                     for part in eval_str.split(","):
                         part = part.strip()
                         if part.startswith("Accuracy:"):
-                            method_info["accuracy"] = part.replace("Accuracy:", "").strip()
+                            method_info["accuracy"] = part.replace(
+                                "Accuracy:", ""
+                            ).strip()
                         elif part.startswith("Ease:"):
                             method_info["ease"] = part.replace("Ease:", "").strip()
                         elif part.startswith("Cost:"):
@@ -833,14 +893,18 @@ def find_feasible_methods(
         indicator_name = meta.get("indicator", f"Indicator {indicator_id}")
 
         output = [f"Measurement Methods for: {indicator_name}"]
-        output.append(f"Filter: Cost≤{max_cost}, Ease≥{min_ease}, Accuracy≥{min_accuracy}")
+        output.append(
+            f"Filter: Cost≤{max_cost}, Ease≥{min_ease}, Accuracy≥{min_accuracy}"
+        )
         output.append(f"Results: {len(filtered)} of {len(methods)} methods match\n")
 
         if not filtered:
             output.append("No methods match your criteria. Try relaxing the filters.")
             output.append("\nAll methods for this indicator:")
             for m in methods[:5]:
-                output.append(f"  - {m.get('general', 'Unknown')} (Cost: {m.get('cost', '?')}, Ease: {m.get('ease', '?')}, Accuracy: {m.get('accuracy', '?')})")
+                output.append(
+                    f"  - {m.get('general', 'Unknown')} (Cost: {m.get('cost', '?')}, Ease: {m.get('ease', '?')}, Accuracy: {m.get('accuracy', '?')})"
+                )
         else:
             for i, m in enumerate(filtered, 1):
                 output.append(f"--- Method {i} ---")
@@ -850,7 +914,9 @@ def find_feasible_methods(
                     output.append(f"Specific: {m['specific']}")
                 if m.get("notes"):
                     output.append(f"Notes: {m['notes']}")
-                output.append(f"Evaluation: Cost={m.get('cost', '?')}, Ease={m.get('ease', '?')}, Accuracy={m.get('accuracy', '?')}")
+                output.append(
+                    f"Evaluation: Cost={m.get('cost', '?')}, Ease={m.get('ease', '?')}, Accuracy={m.get('accuracy', '?')}"
+                )
                 if m.get("references"):
                     output.append(f"References: {m['references']}")
                 output.append("")
@@ -911,13 +977,17 @@ def list_indicators_by_component(component: str, n_results: int = 30) -> str:
             include=["documents", "metadatas"],
         )
 
-        if not results["documents"]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+
+        if not docs:
             return f"No indicators found for component: {component_normalized}"
 
         # Group by class
-        by_class: dict[str, list[tuple[str, dict]]] = {}
-        for doc, meta in zip(results["documents"], results["metadatas"]):
-            ind_class = meta.get("class", "Unknown")
+        by_class: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+        for doc, meta in zip(docs, metas or []):
+            meta = cast(dict[str, Any], meta)
+            ind_class = str(meta.get("class", "Unknown"))
             if ind_class not in by_class:
                 by_class[ind_class] = []
             by_class[ind_class].append((doc, meta))
@@ -926,7 +996,7 @@ def list_indicators_by_component(component: str, n_results: int = 30) -> str:
         sorted_classes = sorted(by_class.keys())
 
         output = [f"=== {component_normalized} Indicators ==="]
-        output.append(f"Total: {len(results['documents'])} indicators across {len(by_class)} classes\n")
+        output.append(f"Total: {len(docs)} indicators across {len(by_class)} classes\n")
 
         count = 0
         for ind_class in sorted_classes:
@@ -942,7 +1012,9 @@ def list_indicators_by_component(component: str, n_results: int = 30) -> str:
 
                 indicator_id = meta.get("id", "?")
                 doc_lines = doc.split("\n")
-                indicator_name = doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+                indicator_name = (
+                    doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+                )
                 unit = meta.get("unit", "")
 
                 output.append(f"  [{indicator_id}] {indicator_name}")
@@ -953,8 +1025,8 @@ def list_indicators_by_component(component: str, n_results: int = 30) -> str:
 
             output.append("")
 
-        if count < len(results["documents"]):
-            output.append(f"... and {len(results['documents']) - count} more indicators")
+        if count < len(docs):
+            output.append(f"... and {len(docs) - count} more indicators")
 
         return "\n".join(output)
 
@@ -968,7 +1040,9 @@ def list_indicators_by_component(component: str, n_results: int = 30) -> str:
 
 
 @tool
-def export_indicator_selection(indicator_ids: list[int], include_methods: bool = True) -> str:
+def export_indicator_selection(
+    indicator_ids: list[int], include_methods: bool = True
+) -> str:
     """
     Generate a formatted markdown report of selected indicators.
 
@@ -1007,17 +1081,22 @@ def export_indicator_selection(indicator_ids: list[int], include_methods: bool =
                 include=["documents", "metadatas"],
             )
 
-            if not ind_results["documents"]:
+            ind_docs = ind_results.get("documents")
+            ind_metas = ind_results.get("metadatas")
+
+            if not ind_docs or not ind_docs[0]:
                 output.append(f"## ⚠️ Indicator {ind_id} - Not Found\n")
                 continue
 
             found_count += 1
-            doc = ind_results["documents"][0]
-            meta = ind_results["metadatas"][0]
+            doc = ind_docs[0]
+            meta = cast(dict[str, Any], ind_metas[0] if ind_metas else {})
 
             # Extract indicator name
             doc_lines = doc.split("\n")
-            indicator_name = doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+            indicator_name = (
+                doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+            )
 
             output.append(f"## {ind_id}. {indicator_name}\n")
 
@@ -1048,8 +1127,8 @@ def export_indicator_selection(indicator_ids: list[int], include_methods: bool =
                 output.append(f"**Measurement approaches:** {', '.join(approaches)}\n")
 
             # Principles and criteria
-            principles_json = meta.get("principles_json", "[]")
-            criteria_json = meta.get("criteria_json", "{}")
+            principles_json = str(meta.get("principles_json", "[]"))
+            criteria_json = str(meta.get("criteria_json", "{}"))
 
             try:
                 principles = json.loads(principles_json)
@@ -1080,11 +1159,18 @@ def export_indicator_selection(indicator_ids: list[int], include_methods: bool =
                     include=["documents", "metadatas"],
                 )
 
-                if method_results["documents"]:
-                    method_meta = method_results["metadatas"][0]
-                    method_count = method_meta.get("method_count", 0)
+                method_docs = method_results.get("documents")
+                method_metas = method_results.get("metadatas")
 
-                    output.append(f"### Measurement Methods ({method_count} available)\n")
+                if method_docs and method_docs[0]:
+                    method_meta = cast(
+                        dict[str, Any], method_metas[0] if method_metas else {}
+                    )
+                    method_count = int(method_meta.get("method_count", 0))
+
+                    output.append(
+                        f"### Measurement Methods ({method_count} available)\n"
+                    )
 
                     # Summary of method quality
                     quality_notes = []
@@ -1101,7 +1187,7 @@ def export_indicator_selection(indicator_ids: list[int], include_methods: bool =
                         output.append("")
 
                     # Parse and include top methods
-                    method_doc = method_results["documents"][0]
+                    method_doc = method_docs[0]
                     method_sections = method_doc.split("--- Method ")
 
                     for section in method_sections[1:4]:  # Limit to first 3 methods
@@ -1109,15 +1195,17 @@ def export_indicator_selection(indicator_ids: list[int], include_methods: bool =
                         output.append(f"**Method {lines[0].split(' ')[0]}**")
 
                         for line in lines[1:]:
-                            if line.startswith("Method (") or line.startswith("Notes:") or line.startswith("Evaluation:"):
+                            if (
+                                line.startswith("Method (")
+                                or line.startswith("Notes:")
+                                or line.startswith("Evaluation:")
+                            ):
                                 output.append(f"- {line}")
 
                         output.append("")
 
                     if method_count > 3:
                         output.append(f"*... and {method_count - 3} more methods*\n")
-                else:
-                    output.append("*No measurement methods documented for this indicator.*\n")
 
             output.append("---\n")
 
@@ -1126,7 +1214,9 @@ def export_indicator_selection(indicator_ids: list[int], include_methods: bool =
         output.append(f"- **Total indicators selected:** {len(indicator_ids)}")
         output.append(f"- **Indicators found:** {found_count}")
         if found_count < len(indicator_ids):
-            output.append(f"- **Indicators not found:** {len(indicator_ids) - found_count}")
+            output.append(
+                f"- **Indicators not found:** {len(indicator_ids) - found_count}"
+            )
 
         return "\n".join(output)
 
@@ -1162,12 +1252,14 @@ def list_available_classes() -> str:
             return "Knowledge base is empty. Run: python scripts/ingest_excel.py"
 
         results = collection.get(include=["metadatas"])
+        metas = results.get("metadatas") or []
 
         # Group by component -> class
         by_component: dict[str, dict[str, int]] = {}
-        for meta in results["metadatas"]:
-            component = meta.get("component", "Unknown")
-            ind_class = meta.get("class", "Unknown")
+        for meta in metas:
+            meta = cast(dict[str, Any], meta)
+            component = str(meta.get("component", "Unknown"))
+            ind_class = str(meta.get("class", "Unknown"))
 
             if component not in by_component:
                 by_component[component] = {}
@@ -1193,7 +1285,9 @@ def list_available_classes() -> str:
 
             output.append("")
 
-        output.append("Use find_indicators_by_class(class_name) to browse indicators in a specific class.")
+        output.append(
+            "Use find_indicators_by_class(class_name) to browse indicators in a specific class."
+        )
 
         return "\n".join(output)
 
@@ -1236,18 +1330,27 @@ def find_indicators_by_class(class_name: str, n_results: int = 30) -> str:
         # Get all indicators and filter by class (case-insensitive)
         results = collection.get(include=["documents", "metadatas"])
 
+        docs = results.get("documents") or []
+        metas = results.get("metadatas") or []
+
         # Find matching class (case-insensitive)
         class_normalized = class_name.strip().lower()
-        matching = []
+        matching: list[tuple[str, dict[str, Any]]] = []
 
-        for doc, meta in zip(results["documents"], results["metadatas"]):
-            if meta.get("class", "").lower() == class_normalized:
+        for doc, meta in zip(docs, metas):
+            meta = cast(dict[str, Any], meta)
+            if str(meta.get("class", "")).lower() == class_normalized:
                 matching.append((doc, meta))
 
         if not matching:
             # Get available classes for helpful error
-            all_classes = sorted(set(m.get("class", "") for m in results["metadatas"]))
-            return f"Class '{class_name}' not found.\n\nAvailable classes:\n" + "\n".join(f"  - {c}" for c in all_classes)
+            all_classes = sorted(
+                set(str(cast(dict[str, Any], m).get("class", "")) for m in metas)
+            )
+            return (
+                f"Class '{class_name}' not found.\n\nAvailable classes:\n"
+                + "\n".join(f"  - {c}" for c in all_classes)
+            )
 
         # Sort by total criteria covered (descending)
         matching.sort(key=lambda x: x[1].get("total_criteria", 0), reverse=True)
@@ -1263,13 +1366,17 @@ def find_indicators_by_class(class_name: str, n_results: int = 30) -> str:
         for doc, meta in matching:
             indicator_id = meta.get("id", "?")
             doc_lines = doc.split("\n")
-            indicator_name = doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+            indicator_name = (
+                doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+            )
             unit = meta.get("unit", "")
 
             output.append(f"[{indicator_id}] {indicator_name}")
             if unit:
                 output.append(f"    Unit: {unit}")
-            output.append(f"    Principles: {meta.get('total_principles', 0)} | Criteria: {meta.get('total_criteria', 0)}")
+            output.append(
+                f"    Principles: {meta.get('total_principles', 0)} | Criteria: {meta.get('total_criteria', 0)}"
+            )
 
             # Show measurement approaches
             approaches = []
@@ -1300,9 +1407,7 @@ def find_indicators_by_class(class_name: str, n_results: int = 30) -> str:
 
 
 @tool
-def find_indicators_by_measurement_approach(
-    approach: str, n_results: int = 30
-) -> str:
+def find_indicators_by_measurement_approach(approach: str, n_results: int = 30) -> str:
     """
     Find indicators that can be measured using a specific approach.
 
@@ -1369,21 +1474,26 @@ def find_indicators_by_measurement_approach(
             include=["documents", "metadatas"],
         )
 
-        if not results["documents"]:
+        docs = results.get("documents")
+        metas = results.get("metadatas")
+
+        if not docs:
             return f"No indicators found with {approach_names[field_name]}."
 
         # Sort by total criteria covered
-        items = list(zip(results["documents"], results["metadatas"]))
+        items: list[tuple[str, dict[str, Any]]] = [
+            (doc, cast(dict[str, Any], meta)) for doc, meta in zip(docs, metas or [])
+        ]
         items.sort(key=lambda x: x[1].get("total_criteria", 0), reverse=True)
         items = items[:n_results]
 
         output = [f"=== Indicators Measurable via {approach_names[field_name]} ==="]
-        output.append(f"Found {len(results['documents'])} indicators (showing {len(items)})\n")
+        output.append(f"Found {len(docs)} indicators (showing {len(items)})\n")
 
         # Group by component for organization
-        by_component: dict[str, list[tuple[str, dict]]] = {}
+        by_component: dict[str, list[tuple[str, dict[str, Any]]]] = {}
         for doc, meta in items:
-            comp = meta.get("component", "Unknown")
+            comp = str(meta.get("component", "Unknown"))
             if comp not in by_component:
                 by_component[comp] = []
             by_component[comp].append((doc, meta))
@@ -1396,11 +1506,15 @@ def find_indicators_by_measurement_approach(
             for doc, meta in by_component[component]:
                 indicator_id = meta.get("id", "?")
                 doc_lines = doc.split("\n")
-                indicator_name = doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+                indicator_name = (
+                    doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+                )
                 ind_class = meta.get("class", "")
 
                 output.append(f"  [{indicator_id}] {indicator_name}")
-                output.append(f"      Class: {ind_class} | Principles: {meta.get('total_principles', 0)}")
+                output.append(
+                    f"      Class: {ind_class} | Principles: {meta.get('total_principles', 0)}"
+                )
 
             output.append("")
 
@@ -1432,7 +1546,6 @@ def compare_indicators(indicator_ids: list[int]) -> str:
     Returns:
         Side-by-side comparison table of the indicators
     """
-    import json
 
     if not indicator_ids:
         return "No indicator IDs provided. Please specify 2-5 indicator IDs to compare."
@@ -1454,34 +1567,47 @@ def compare_indicators(indicator_ids: list[int]) -> str:
                 ids=[f"indicator:{ind_id}"],
                 include=["documents", "metadatas"],
             )
-            if results["documents"]:
-                doc = results["documents"][0]
-                meta = results["metadatas"][0]
+            docs = results.get("documents")
+            metas = results.get("metadatas")
+
+            if docs and docs[0]:
+                doc = docs[0]
+                meta = cast(dict[str, Any], metas[0] if metas else {})
 
                 # Extract name
                 doc_lines = doc.split("\n")
-                name = doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+                name = (
+                    doc_lines[0].replace("Indicator: ", "") if doc_lines else "Unknown"
+                )
 
                 # Get method info
                 method_results = methods_coll.get(
                     ids=[f"methods_for_indicator:{ind_id}"],
                     include=["metadatas"],
                 )
-                method_meta = method_results["metadatas"][0] if method_results["metadatas"] else {}
+                method_metas = method_results.get("metadatas")
+                method_meta = cast(
+                    dict[str, Any],
+                    method_metas[0] if method_metas and method_metas[0] else {},
+                )
 
-                indicator_data.append({
-                    "id": ind_id,
-                    "name": name,
-                    "meta": meta,
-                    "method_meta": method_meta,
-                })
+                indicator_data.append(
+                    {
+                        "id": ind_id,
+                        "name": name,
+                        "meta": meta,
+                        "method_meta": method_meta,
+                    }
+                )
             else:
-                indicator_data.append({
-                    "id": ind_id,
-                    "name": f"NOT FOUND (ID: {ind_id})",
-                    "meta": {},
-                    "method_meta": {},
-                })
+                indicator_data.append(
+                    {
+                        "id": ind_id,
+                        "name": f"NOT FOUND (ID: {ind_id})",
+                        "meta": {},
+                        "method_meta": {},
+                    }
+                )
 
         # Build comparison output
         output = ["# Indicator Comparison\n"]
@@ -1489,11 +1615,18 @@ def compare_indicators(indicator_ids: list[int]) -> str:
         # Basic info table
         output.append("## Overview")
         output.append("")
-        output.append("| Property | " + " | ".join(f"**{d['id']}**" for d in indicator_data) + " |")
+        output.append(
+            "| Property | "
+            + " | ".join(f"**{d['id']}**" for d in indicator_data)
+            + " |"
+        )
         output.append("|----------|" + "|".join("-" * 10 for _ in indicator_data) + "|")
 
         # Name (truncated)
-        names = [d["name"][:30] + "..." if len(d["name"]) > 30 else d["name"] for d in indicator_data]
+        names = [
+            d["name"][:30] + "..." if len(d["name"]) > 30 else d["name"]
+            for d in indicator_data
+        ]
         output.append("| Name | " + " | ".join(names) + " |")
 
         # Component
@@ -1513,7 +1646,11 @@ def compare_indicators(indicator_ids: list[int]) -> str:
         # Measurement approaches
         output.append("## Measurement Approaches")
         output.append("")
-        output.append("| Approach | " + " | ".join(f"**{d['id']}**" for d in indicator_data) + " |")
+        output.append(
+            "| Approach | "
+            + " | ".join(f"**{d['id']}**" for d in indicator_data)
+            + " |"
+        )
         output.append("|----------|" + "|".join("-" * 10 for _ in indicator_data) + "|")
 
         approaches = [
@@ -1533,38 +1670,58 @@ def compare_indicators(indicator_ids: list[int]) -> str:
         # Principle coverage
         output.append("## Principle Coverage")
         output.append("")
-        output.append("| Principle | " + " | ".join(f"**{d['id']}**" for d in indicator_data) + " |")
+        output.append(
+            "| Principle | "
+            + " | ".join(f"**{d['id']}**" for d in indicator_data)
+            + " |"
+        )
         output.append("|----------|" + "|".join("-" * 10 for _ in indicator_data) + "|")
 
         for pid, pname in PRINCIPLES.items():
-            values = ["✅" if d["meta"].get(f"principle_{pid}") else "❌" for d in indicator_data]
+            values = [
+                "✅" if d["meta"].get(f"principle_{pid}") else "❌"
+                for d in indicator_data
+            ]
             output.append(f"| {pid}. {pname} | " + " | ".join(values) + " |")
 
         # Totals
         p_totals = [str(d["meta"].get("total_principles", 0)) for d in indicator_data]
         c_totals = [str(d["meta"].get("total_criteria", 0)) for d in indicator_data]
-        output.append(f"| **Total Principles** | " + " | ".join(p_totals) + " |")
-        output.append(f"| **Total Criteria** | " + " | ".join(c_totals) + " |")
+        output.append("| **Total Principles** | " + " | ".join(p_totals) + " |")
+        output.append("| **Total Criteria** | " + " | ".join(c_totals) + " |")
 
         output.append("")
 
         # Method quality (if available)
         output.append("## Method Quality")
         output.append("")
-        output.append("| Quality | " + " | ".join(f"**{d['id']}**" for d in indicator_data) + " |")
+        output.append(
+            "| Quality | " + " | ".join(f"**{d['id']}**" for d in indicator_data) + " |"
+        )
         output.append("|---------|" + "|".join("-" * 10 for _ in indicator_data) + "|")
 
-        method_counts = [str(d["method_meta"].get("method_count", 0)) for d in indicator_data]
-        output.append(f"| Methods available | " + " | ".join(method_counts) + " |")
+        method_counts = [
+            str(d["method_meta"].get("method_count", 0)) for d in indicator_data
+        ]
+        output.append("| Methods available | " + " | ".join(method_counts) + " |")
 
-        high_accuracy = ["✅" if d["method_meta"].get("has_high_accuracy") else "❌" for d in indicator_data]
-        output.append(f"| High accuracy option | " + " | ".join(high_accuracy) + " |")
+        high_accuracy = [
+            "✅" if d["method_meta"].get("has_high_accuracy") else "❌"
+            for d in indicator_data
+        ]
+        output.append("| High accuracy option | " + " | ".join(high_accuracy) + " |")
 
-        low_cost = ["✅" if d["method_meta"].get("has_low_cost") else "❌" for d in indicator_data]
-        output.append(f"| Low cost option | " + " | ".join(low_cost) + " |")
+        low_cost = [
+            "✅" if d["method_meta"].get("has_low_cost") else "❌"
+            for d in indicator_data
+        ]
+        output.append("| Low cost option | " + " | ".join(low_cost) + " |")
 
-        high_ease = ["✅" if d["method_meta"].get("has_high_ease") else "❌" for d in indicator_data]
-        output.append(f"| Easy-to-use option | " + " | ".join(high_ease) + " |")
+        high_ease = [
+            "✅" if d["method_meta"].get("has_high_ease") else "❌"
+            for d in indicator_data
+        ]
+        output.append("| Easy-to-use option | " + " | ".join(high_ease) + " |")
 
         return "\n".join(output)
 

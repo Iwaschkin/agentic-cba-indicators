@@ -1,0 +1,21 @@
+# =============================================================================
+# Example: Anthropic Claude Configuration
+# =============================================================================
+# To use this config:
+#   1. Set ANTHROPIC_API_KEY environment variable
+#   2. Run: python main.py --config=config/examples/anthropic.yaml
+# =============================================================================
+
+active_provider: anthropic
+
+providers:
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+    model_id: "claude-sonnet-4-20250514"
+    max_tokens: 8192
+    temperature: 0.1
+
+agent:
+  # Use full tool set - Claude handles many tools well
+  tool_set: full
+  conversation_window: 10

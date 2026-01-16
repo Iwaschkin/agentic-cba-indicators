@@ -19,6 +19,8 @@ Document IDs:
     - usecase:{slug}:outcome:{id}    - One per outcome row
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import re
@@ -26,10 +28,14 @@ import sys
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import chromadb
 import httpx
 import pandas as pd
+
+if TYPE_CHECKING:
+    from chromadb.api import ClientAPI
 
 # =============================================================================
 # Configuration
@@ -129,9 +135,9 @@ class UseCaseOutcomeDoc:
             f"Use Case: {self.use_case_name}",
             f"Country: {self.country} ({self.region})",
             f"Commodity: {self.commodity}",
-            f"",
+            "",
             f"Outcome {self.outcome_id}: {self.outcome_text}",
-            f"",
+            "",
             f"Selected Indicators ({len(self.selected_indicator_names)}):",
         ]
 
@@ -139,7 +145,7 @@ class UseCaseOutcomeDoc:
             parts.append(f"  - {name}")
 
         if self.extra_indicator_names:
-            parts.append(f"")
+            parts.append("")
             parts.append(f"Extra Indicators ({len(self.extra_indicator_names)}):")
             for name in self.extra_indicator_names:
                 parts.append(f"  - {name}")
@@ -408,14 +414,14 @@ def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
 # =============================================================================
 
 
-def get_chroma_client() -> chromadb.PersistentClient:
+def get_chroma_client() -> "ClientAPI":
     """Get or create persistent ChromaDB client."""
     KB_PATH.mkdir(parents=True, exist_ok=True)
     return chromadb.PersistentClient(path=str(KB_PATH))
 
 
 def upsert_usecase_docs(
-    client: chromadb.PersistentClient,
+    client: "ClientAPI",
     overview: UseCaseOverviewDoc | None,
     outcomes: list[UseCaseOutcomeDoc],
     verbose: bool = False,
@@ -446,12 +452,12 @@ def upsert_usecase_docs(
     print(f"  Embedding {len(documents)} documents...")
     embeddings = get_embeddings_batch(documents)
 
-    print(f"  Upserting to 'usecases' collection...")
+    print("  Upserting to 'usecases' collection...")
     collection.upsert(
         ids=ids,
-        embeddings=embeddings,
+        embeddings=embeddings,  # type: ignore[arg-type]
         documents=documents,
-        metadatas=metadatas,
+        metadatas=metadatas,  # type: ignore[arg-type]
     )
 
     return len(all_docs)
@@ -465,7 +471,7 @@ def upsert_usecase_docs(
 def ingest_usecase(
     use_case_config: dict,
     master_lookup: dict[str, int],
-    client: chromadb.PersistentClient,
+    client: "ClientAPI",
     verbose: bool = False,
     dry_run: bool = False,
 ) -> dict:
@@ -490,7 +496,7 @@ def ingest_usecase(
         print(f"  ⚠ PDF not found: {pdf_path}")
 
     # Load outcomes from Excel
-    print(f"  Loading outcomes from Excel...")
+    print("  Loading outcomes from Excel...")
     outcomes = load_usecase_excel(
         excel_path,
         use_case_config["excel_sheet"],
@@ -503,7 +509,7 @@ def ingest_usecase(
     # Extract PDF summary
     overview = None
     if pdf_path.exists():
-        print(f"  Extracting PDF summary...")
+        print("  Extracting PDF summary...")
         pdf_summary = extract_pdf_summary(pdf_path)
         if pdf_summary:
             overview = UseCaseOverviewDoc(
@@ -525,9 +531,7 @@ def ingest_usecase(
         summary["unresolved_indicators"] += len(outcome.unresolved_names)
 
     # Upsert to ChromaDB
-    doc_count = upsert_usecase_docs(
-        client, overview, outcomes, verbose=verbose, dry_run=dry_run
-    )
+    upsert_usecase_docs(client, overview, outcomes, verbose=verbose, dry_run=dry_run)
     summary["outcomes"] = len(outcomes)
 
     return summary
@@ -569,7 +573,7 @@ def ingest(
             print("  Collection didn't exist")
 
     # Load master indicator lookup
-    print(f"\nLoading master indicator library...")
+    print("\nLoading master indicator library...")
     if not MASTER_EXCEL.exists():
         results["errors"].append(f"Master Excel not found: {MASTER_EXCEL}")
         return results
@@ -656,7 +660,7 @@ Examples:
     print(f"Total documents indexed: {results['total_docs']}")
 
     if results["errors"]:
-        print(f"\nErrors encountered:")
+        print("\nErrors encountered:")
         for err in results["errors"]:
             print(f"  - {err}")
         sys.exit(1)

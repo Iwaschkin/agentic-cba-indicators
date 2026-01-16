@@ -4,181 +4,304 @@ Strands CLI Chatbot - Weather, Climate, and Socio-Economic Data Assistant
 A conversational AI assistant that can query:
 - Current weather and forecasts (via Open-Meteo)
 - Climate normals and historical data (via Open-Meteo)
+- Agricultural climate data (via NASA POWER)
+- Soil properties (via ISRIC SoilGrids)
+- Biodiversity data (via GBIF)
+- Labor statistics (via ILO STAT)
+- SDG indicator progress (via UN SDG API)
 - Country information and World Bank indicators
 
-Uses Ollama as the AI provider with conversation memory.
+Supports multiple AI providers: Ollama, Anthropic, OpenAI, AWS Bedrock, Google Gemini.
+Configuration via config/providers.yaml.
 """
+
+from pathlib import Path
 
 from strands import Agent
 from strands.agent.conversation_manager import SlidingWindowConversationManager
-from strands.models.ollama import OllamaModel
+
+from config import (
+    AgentConfig,
+    ProviderConfig,
+    create_model,
+    get_agent_config,
+    get_provider_config,
+    load_config,
+    print_provider_info,
+)
 from tools import (
+    compare_commodity_producers,
+    compare_gender_gaps,
     compare_indicators,
     export_indicator_selection,
     find_feasible_methods,
     find_indicators_by_class,
     find_indicators_by_measurement_approach,
     find_indicators_by_principle,
+    get_agricultural_climate,
+    get_biodiversity_summary,
     get_climate_data,
+    get_commodity_production,
+    get_commodity_trade,
     get_country_indicators,
+    get_crop_production,
     get_current_weather,
+    get_employment_by_gender,
+    get_evapotranspiration,
+    get_forest_statistics,
+    get_gender_indicators,
+    get_gender_time_series,
     get_historical_climate,
     get_indicator_details,
+    get_labor_indicators,
+    get_labor_time_series,
+    get_land_use,
+    get_sdg_for_cba_principle,
+    get_sdg_progress,
+    get_sdg_series_data,
+    get_soil_carbon,
+    get_soil_properties,
+    get_soil_texture,
+    get_solar_radiation,
+    get_species_occurrences,
+    get_species_taxonomy,
     get_usecase_details,
     get_usecases_by_indicator,
     get_weather_forecast,
     get_world_bank_data,
     list_available_classes,
+    list_fas_commodities,
     list_indicators_by_component,
     list_knowledge_base_stats,
+    search_commodity_data,
+    search_fao_indicators,
+    search_gender_indicators,
     search_indicators,
+    search_labor_indicators,
     search_methods,
+    search_sdg_indicators,
+    search_species,
     search_usecases,
 )
 
-SYSTEM_PROMPT = """You are a helpful data assistant specialized in weather, climate, socio-economic information, and CBA (Cost-Benefit Analysis) indicators for sustainable agriculture.
+# Load system prompt from external file
+PROMPT_FILE = Path(__file__).parent / "prompts" / "system_prompt_minimal.md"
 
-IMPORTANT: When answering questions, you MUST call the appropriate tools to gather real data. Do NOT describe what tools you would use or ask the user to make tool calls. Execute the tools yourself and present the results.
 
-**Available Tools:**
+def load_system_prompt() -> str:
+    """Load the system prompt from the external markdown file."""
+    if PROMPT_FILE.exists():
+        return PROMPT_FILE.read_text(encoding="utf-8")
+    else:
+        # Fallback minimal prompt if file is missing
+        return """You are a helpful data assistant for sustainable agriculture.
+Call tools to get real data. Never ask clarifying questions."""
 
-Weather & Climate:
-- get_current_weather(city): Current weather conditions
-- get_weather_forecast(city, days): Weather forecast up to 16 days
-- get_climate_data(city): 30-year climate normals
-- get_historical_climate(city, year): Historical weather for a specific year
 
-Socio-Economic:
-- get_country_indicators(country): Country profile (population, area, languages, etc.)
-- get_world_bank_data(country, indicator): Economic indicators - options: gdp, gdp_per_capita, gdp_growth, population, inflation, unemployment, life_expectancy, literacy, poverty, gini, co2, renewable_energy, internet, mobile
+# =============================================================================
+# Tool Sets
+# =============================================================================
 
-CBA ME Indicators Knowledge Base:
-- search_indicators(query, n_results): Search indicators by topic (soil, water, biodiversity, labor, income, etc.)
-- search_methods(query, n_results): Search measurement methods and techniques
-- get_indicator_details(indicator_id): Full details for a specific indicator by ID
-- list_knowledge_base_stats(): Show what's indexed
+# Reduced tool set (19 tools) - for smaller models like llama3.1:8b
+REDUCED_TOOLS = [
+    # Essential Context Tools
+    get_current_weather,
+    get_climate_data,
+    get_soil_properties,
+    get_soil_carbon,
+    get_country_indicators,
+    # CBA Knowledge Base (core)
+    search_indicators,
+    search_methods,
+    get_indicator_details,
+    list_knowledge_base_stats,
+    # Indicator Selection (core)
+    find_indicators_by_principle,
+    find_feasible_methods,
+    list_indicators_by_component,
+    list_available_classes,
+    find_indicators_by_class,
+    compare_indicators,
+    export_indicator_selection,
+    # Use Cases
+    search_usecases,
+    get_usecase_details,
+    get_usecases_by_indicator,
+]
 
-Indicator Selection Tools:
-- find_indicators_by_principle(principle, include_criteria): Find indicators by CBA principle (1-7 or name like "Natural Environment")
-- find_feasible_methods(indicator, max_cost, min_ease, min_accuracy): Filter methods by practical constraints
-- list_indicators_by_component(component): Browse indicators by component (Biotic, Abiotic, Socio-economic)
-- list_available_classes(): Discover all indicator classes (Biodiversity, Soil carbon, etc.)
-- find_indicators_by_class(class_name): List indicators in a specific class
-- find_indicators_by_measurement_approach(approach): Find indicators measurable via field/lab/remote/participatory/audit methods
-- compare_indicators(indicator_ids): Side-by-side comparison of 2-5 indicators
-- export_indicator_selection(indicator_ids, include_methods): Generate markdown report of selected indicators
+# Full tool set (52 tools) - for larger models like Claude, GPT-4, etc.
+FULL_TOOLS = [
+    # Weather & Climate (Open-Meteo)
+    get_current_weather,
+    get_weather_forecast,
+    get_climate_data,
+    get_historical_climate,
+    # Agricultural Climate (NASA POWER)
+    get_agricultural_climate,
+    get_solar_radiation,
+    get_evapotranspiration,
+    # Soil Properties (ISRIC SoilGrids)
+    get_soil_properties,
+    get_soil_carbon,
+    get_soil_texture,
+    # Biodiversity (GBIF)
+    search_species,
+    get_species_occurrences,
+    get_biodiversity_summary,
+    get_species_taxonomy,
+    # Labor Statistics (ILO STAT)
+    get_labor_indicators,
+    get_employment_by_gender,
+    get_labor_time_series,
+    search_labor_indicators,
+    # Gender Statistics (World Bank)
+    get_gender_indicators,
+    compare_gender_gaps,
+    get_gender_time_series,
+    search_gender_indicators,
+    # Agriculture & Forestry (FAO)
+    get_forest_statistics,
+    get_crop_production,
+    get_land_use,
+    search_fao_indicators,
+    # Commodity Markets (USDA FAS)
+    get_commodity_production,
+    get_commodity_trade,
+    compare_commodity_producers,
+    list_fas_commodities,
+    search_commodity_data,
+    # SDG Indicators (UN SDG API)
+    get_sdg_progress,
+    search_sdg_indicators,
+    get_sdg_series_data,
+    get_sdg_for_cba_principle,
+    # Socio-economic (World Bank & REST Countries)
+    get_country_indicators,
+    get_world_bank_data,
+    # Knowledge Base
+    search_indicators,
+    search_methods,
+    get_indicator_details,
+    list_knowledge_base_stats,
+    # Indicator Selection
+    find_indicators_by_principle,
+    find_feasible_methods,
+    list_indicators_by_component,
+    list_available_classes,
+    find_indicators_by_class,
+    find_indicators_by_measurement_approach,
+    compare_indicators,
+    export_indicator_selection,
+    # Use Cases
+    search_usecases,
+    get_usecase_details,
+    get_usecases_by_indicator,
+]
 
-Use Case Examples (Real Projects):
-- search_usecases(query, n_results): Find example projects by commodity, country, or outcome
-- get_usecase_details(use_case_slug): Get full project details with all outcomes and indicators
-- get_usecases_by_indicator(indicator): Find projects that used a specific indicator (by ID or name)
 
-**CRITICAL WORKFLOW for Location-Based Farming/Agriculture Questions:**
+def create_agent_from_config(
+    config_path: Path | str | None = None,
+    provider_override: str | None = None,
+) -> tuple[Agent, ProviderConfig, AgentConfig]:
+    """
+    Create and configure the Strands agent from configuration file.
 
-When a user asks about farming, agriculture, or indicators for a specific location, you MUST follow this sequence:
+    Args:
+        config_path: Path to providers.yaml (optional, defaults to config/providers.yaml)
+        provider_override: Override the active provider from command line
 
-1. **GATHER CONTEXT FIRST** - Call these tools to understand the location:
-   - get_climate_data(location) - to understand rainfall, temperature patterns
-   - get_current_weather(location) - for current conditions
-   - get_country_indicators(country) - for socio-economic context
+    Returns:
+        Tuple of (Agent, ProviderConfig, AgentConfig)
+    """
+    # Load configuration
+    config = load_config(config_path)
 
-2. **SEARCH RELEVANT INDICATORS** - Based on the context gathered:
-   - search_indicators(query, n_results=5-10) - search for indicators relevant to the crop/activity AND the climate/conditions discovered
-   - find_indicators_by_principle(principle) - if user mentions specific sustainability goals
+    # Allow command-line override of provider
+    if provider_override:
+        config["active_provider"] = provider_override
 
-3. **GET MEASUREMENT METHODS** - For each recommended indicator:
-   - find_feasible_methods(indicator, max_cost, min_ease) - filter by practical constraints
-   - Include method accuracy, ease of use, and cost in your recommendations
+    provider_config = get_provider_config(config)
+    agent_config = get_agent_config(config)
 
-4. **SYNTHESIZE AND RECOMMEND** - Combine all data to provide:
-   - Top indicators ranked by relevance to the location's climate and conditions
-   - Specific measurement methods for each indicator
-   - Explain WHY each indicator matters given the local context (climate, rainfall, etc.)
+    # Create the model
+    model = create_model(provider_config)
 
-**Example workflow for "wheat farm in Cheshire":**
-1. Call get_climate_data("Cheshire") → learn about rainfall, temperatures
-2. Call get_country_indicators("UK") → economic context
-3. Call search_indicators("wheat crop soil yield agriculture") → find relevant indicators
-4. Call search_methods("soil measurement wheat") → get measurement approaches
-5. Combine: recommend indicators suited to Cheshire's wet climate with practical methods
+    # Configure conversation memory
+    conversation_manager = SlidingWindowConversationManager(
+        window_size=agent_config.conversation_window,
+    )
 
-When users ask questions:
-1. ALWAYS call tools to get real data - never just describe what you would do
-2. Provide clear, well-formatted responses based on the tool results
-3. Include BOTH indicators AND their measurement methods in recommendations
-4. Explain your reasoning based on the location's actual climate/economic data
+    # Select tool set
+    if agent_config.tool_set == "full":
+        tools = FULL_TOOLS
+    else:
+        tools = REDUCED_TOOLS
 
-Be conversational and helpful. Do NOT ask users to make tool calls - you make them yourself."""
+    # Create agent
+    agent = Agent(
+        model=model,
+        system_prompt=load_system_prompt(),
+        conversation_manager=conversation_manager,
+        tools=tools,
+    )
+
+    return agent, provider_config, agent_config
 
 
 def create_agent(
-    model_id: str = "llama3.1", host: str = "http://localhost:11434"
+    model_id: str = "llama3.1:latest", host: str = "http://localhost:11434"
 ) -> Agent:
-    """Create and configure the Strands agent with Ollama and tools."""
+    """
+    Create agent with Ollama (legacy interface for backward compatibility).
 
-    # Configure Ollama model
+    Args:
+        model_id: Ollama model ID
+        host: Ollama server URL
+
+    Returns:
+        Configured Agent instance
+    """
+    from strands.models.ollama import OllamaModel
+
     ollama_model = OllamaModel(
         host=host,
         model_id=model_id,
-        temperature=0.7,
+        temperature=0.1,
+        options={"num_ctx": 16384},
     )
 
-    # Configure conversation memory - keep more messages for context
-    conversation_manager = SlidingWindowConversationManager(
-        window_size=40,  # Keep up to 40 message pairs
-    )
+    conversation_manager = SlidingWindowConversationManager(window_size=5)
 
-    # Create agent with all tools and conversation memory
     agent = Agent(
         model=ollama_model,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=load_system_prompt(),
         conversation_manager=conversation_manager,
-        tools=[
-            # Weather & Climate
-            get_current_weather,
-            get_weather_forecast,
-            get_climate_data,
-            get_historical_climate,
-            # Socio-economic
-            get_country_indicators,
-            get_world_bank_data,
-            # Knowledge Base
-            search_indicators,
-            search_methods,
-            get_indicator_details,
-            list_knowledge_base_stats,
-            # Indicator Selection
-            find_indicators_by_principle,
-            find_feasible_methods,
-            list_indicators_by_component,
-            list_available_classes,
-            find_indicators_by_class,
-            find_indicators_by_measurement_approach,
-            compare_indicators,
-            export_indicator_selection,
-            # Use Cases
-            search_usecases,
-            get_usecase_details,
-            get_usecases_by_indicator,
-        ],
+        tools=REDUCED_TOOLS,
     )
 
     return agent
 
 
-def print_banner():
+def print_banner(tool_count: int, provider_config: ProviderConfig | None = None):
     """Print the welcome banner."""
     print("\n" + "=" * 60)
-    print("🌍 Data Assistant - Weather, Climate, CBA Indicators")
+    print("🌍 Data Assistant - CBA Indicators & Sustainable Agriculture")
     print("=" * 60)
-    print("\nPowered by Strands Agents + Ollama")
+
+    if provider_config:
+        print()
+        print_provider_info(provider_config)
+        print(f"   Tools: {tool_count}")
+    else:
+        print(f"\nPowered by Strands Agents ({tool_count} tools loaded)")
+
     print("\nI can help you with:")
-    print("  🌤️  Current weather and forecasts")
-    print("  📊  Climate data and historical records")
-    print("  🌐  Country information and economic indicators")
+    print("  🌤️  Weather and climate data")
+    print("  🪨  Soil properties and carbon content")
+    print("  🌐  Country information")
     print("  📋  CBA ME Indicators and measurement methods")
-    print("  📊  Climate data and historical records")
-    print("  🌐  Country information and economic indicators")
+    print("  📊  Indicator selection and comparison")
+    print("  📁  Real project use cases")
     print("\nType 'quit' or 'exit' to end the conversation.")
     print("Type 'help' for example queries.")
     print("-" * 60 + "\n")
@@ -187,19 +310,62 @@ def print_banner():
 def print_help():
     """Print example queries."""
     print("\n📖 Example Queries:\n")
-    print("Weather:")
+    print("Weather & Climate:")
     print("  • What's the weather in Tokyo?")
     print("  • Give me a 5-day forecast for London")
-    print("")
-    print("Climate:")
     print("  • What are the climate normals for Sydney?")
     print("  • How was the weather in Paris in 2020?")
+    print("")
+    print("Agricultural Climate (NASA POWER):")
+    print("  • Get agricultural climate data for Iowa from Jan-Jun 2024")
+    print("  • What's the solar radiation in Brazil for 2023?")
+    print("  • Calculate evapotranspiration for Kenya last month")
+    print("")
+    print("Soil Properties (SoilGrids):")
+    print("  • What are the soil properties in Chad?")
+    print("  • Get soil carbon data for my location: 5.5, -0.2")
+    print("  • What's the soil texture at 10, 20?")
+    print("")
+    print("Biodiversity (GBIF):")
+    print("  • Search for African elephant species")
+    print("  • Where have lions been observed in Kenya?")
+    print("  • Get biodiversity summary for the Amazon rainforest")
+    print("")
+    print("Labor Statistics (ILO):")
+    print("  • What are the labor indicators for Brazil?")
+    print("  • Compare employment by gender in Kenya")
+    print("  • Show unemployment trends for Germany since 2010")
+    print("")
+    print("Gender Statistics (World Bank):")
+    print("  • Get gender indicators for Kenya")
+    print("  • Compare gender gaps in education for Brazil")
+    print("  • Show female labor force participation trends in India")
+    print("")
+    print("Agriculture & Forestry (FAO):")
+    print("  • Get forest statistics for Brazil")
+    print("  • Show cotton production in Chad over the last 10 years")
+    print("  • What's the land use pattern in Kenya?")
+    print("")
+    print("Commodity Markets (USDA FAS):")
+    print("  • Get cotton production data for Chad")
+    print("  • Compare top coffee producing countries")
+    print("  • Show cocoa trade trends for Ivory Coast")
+    print("  • List available commodities in the FAS database")
+    print("")
+    print("UN SDG Indicators:")
+    print("  • What's Brazil's progress on SDG 2 (Zero Hunger)?")
+    print("  • Find SDG indicators related to water quality")
+    print("  • Which SDGs align with CBA principle 1?")
     print("")
     print("Socio-Economic:")
     print("  • Tell me about Japan")
     print("  • What's the GDP of Germany?")
     print("  • Compare life expectancy in Sweden and USA")
-    print("  • Show unemployment data for Brazil")
+    print("")
+    print("CBA Indicators:")
+    print("  • Find indicators for soil health measurement")
+    print("  • What methods measure biodiversity?")
+    print("  • Show indicators for a cotton farm in Chad")
     print("")
 
 
@@ -208,37 +374,53 @@ def main():
     import sys
 
     # Parse command line arguments
-    model_id = "llama3.1"
-    host = "http://localhost:11434"
+    config_path = None
+    provider_override = None
 
-    for i, arg in enumerate(sys.argv[1:], 1):
-        if arg.startswith("--model="):
-            model_id = arg.split("=")[1]
-        elif arg.startswith("--host="):
-            host = arg.split("=")[1]
+    for arg in sys.argv[1:]:
+        if arg.startswith("--config="):
+            config_path = arg.split("=")[1]
+        elif arg.startswith("--provider="):
+            provider_override = arg.split("=")[1]
         elif arg in ["-h", "--help"]:
-            print("Usage: python main.py [--model=MODEL_ID] [--host=OLLAMA_HOST]")
+            print("Usage: python main.py [OPTIONS]")
             print("\nOptions:")
-            print("  --model=MODEL_ID   Ollama model to use (default: llama3.1)")
-            print(
-                "  --host=HOST        Ollama server URL (default: http://localhost:11434)"
-            )
-            print("\nExample:")
-            print("  python main.py --model=mistral --host=http://localhost:11434")
+            print("  --config=PATH       Path to providers.yaml config file")
+            print("  --provider=NAME     Override active provider (ollama, anthropic, openai, bedrock, gemini)")
+            print("\nExamples:")
+            print("  python main.py                          # Use default config (Ollama)")
+            print("  python main.py --provider=anthropic     # Use Anthropic Claude")
+            print("  python main.py --provider=openai        # Use OpenAI GPT")
+            print("  python main.py --provider=bedrock       # Use AWS Bedrock")
+            print("  python main.py --provider=gemini        # Use Google Gemini")
+            print("  python main.py --config=my_config.yaml  # Use custom config file")
+            print("\nConfiguration:")
+            print("  Edit config/providers.yaml to set API keys and model preferences.")
+            print("  Environment variables are supported: ${ANTHROPIC_API_KEY}")
             sys.exit(0)
 
-    print_banner()
-
-    print(f"🔧 Connecting to Ollama ({host}) with model: {model_id}...")
-
     try:
-        agent = create_agent(model_id=model_id, host=host)
+        agent, provider_config, agent_config = create_agent_from_config(
+            config_path=config_path,
+            provider_override=provider_override,
+        )
+        tool_count = len(FULL_TOOLS) if agent_config.tool_set == "full" else len(REDUCED_TOOLS)
+
+        print_banner(tool_count=tool_count, provider_config=provider_config)
         print("✅ Agent ready!\n")
+
+    except FileNotFoundError as e:
+        print(f"\n❌ Configuration Error: {e}")
+        print("   Create config/providers.yaml or specify --config=PATH")
+        sys.exit(1)
+    except ImportError as e:
+        print(f"\n❌ Missing Dependency: {e}")
+        sys.exit(1)
+    except ValueError as e:
+        print(f"\n❌ Configuration Error: {e}")
+        sys.exit(1)
     except Exception as e:
-        print(f"\n❌ Error: Could not connect to Ollama at {host}")
-        print(f"   Make sure Ollama is running: ollama serve")
-        print(f"   And the model is pulled: ollama pull {model_id}")
-        print(f"\n   Details: {e}")
+        print(f"\n❌ Error creating agent: {e}")
         sys.exit(1)
 
     # Main conversation loop
@@ -260,7 +442,7 @@ def main():
             print("\nAssistant: ", end="", flush=True)
 
             # Get response from agent (streams to stdout by default)
-            response = agent(user_input)
+            agent(user_input)
 
             print("\n")  # Add spacing after response
 

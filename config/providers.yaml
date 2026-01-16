@@ -1,0 +1,79 @@
+# =============================================================================
+# Model Provider Configuration
+# =============================================================================
+# This file configures which AI model provider to use for the Strands agent.
+# Supported providers: ollama, anthropic, openai, bedrock, gemini
+#
+# Environment variables can be used for sensitive values:
+#   ${ANTHROPIC_API_KEY} - will read from environment variable
+# =============================================================================
+
+# Active provider (choose one: ollama, anthropic, openai, bedrock, gemini)
+active_provider: ollama
+
+# =============================================================================
+# Provider Configurations
+# =============================================================================
+
+providers:
+  # ---------------------------------------------------------------------------
+  # Ollama - Local LLM (default)
+  # ---------------------------------------------------------------------------
+  ollama:
+    host: "http://localhost:11434"
+    model_id: "llama3.1:latest"
+    temperature: 0.1
+    options:
+      num_ctx: 16384  # Context window size
+
+  # ---------------------------------------------------------------------------
+  # Anthropic - Claude models
+  # ---------------------------------------------------------------------------
+  anthropic:
+    api_key: ${ANTHROPIC_API_KEY}
+    model_id: "claude-sonnet-4-20250514"
+    max_tokens: 4096
+    temperature: 0.1
+
+  # ---------------------------------------------------------------------------
+  # OpenAI - GPT models
+  # ---------------------------------------------------------------------------
+  openai:
+    api_key: ${OPENAI_API_KEY}
+    model_id: "gpt-4o"
+    max_tokens: 4096
+    temperature: 0.1
+    # Optional: base_url for OpenAI-compatible endpoints
+    # base_url: "https://api.openai.com/v1"
+
+  # ---------------------------------------------------------------------------
+  # AWS Bedrock - Multiple foundation models
+  # ---------------------------------------------------------------------------
+  bedrock:
+    # AWS credentials are loaded from environment or AWS CLI config
+    # Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
+    model_id: "us.anthropic.claude-sonnet-4-20250514-v1:0"
+    region_name: "us-east-1"
+    temperature: 0.1
+    max_tokens: 4096
+
+  # ---------------------------------------------------------------------------
+  # Google Gemini
+  # ---------------------------------------------------------------------------
+  gemini:
+    api_key: ${GOOGLE_API_KEY}
+    model_id: "gemini-2.5-flash"
+    temperature: 0.1
+    max_output_tokens: 4096
+    top_p: 0.9
+
+# =============================================================================
+# Agent Configuration
+# =============================================================================
+agent:
+  # Tool set to use: "reduced" (19 tools) or "full" (52 tools)
+  # Use "reduced" for smaller models, "full" for larger cloud models
+  tool_set: reduced
+  
+  # Conversation window size (number of message pairs to keep)
+  conversation_window: 5

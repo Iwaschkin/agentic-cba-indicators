@@ -1,0 +1,30 @@
+# =============================================================================
+# Example: AWS Bedrock Configuration
+# =============================================================================
+# To use this config:
+#   1. Configure AWS credentials (aws configure or environment variables)
+#      - AWS_ACCESS_KEY_ID
+#      - AWS_SECRET_ACCESS_KEY
+#      - AWS_REGION (or set region_name below)
+#   2. Ensure you have Bedrock model access enabled in AWS Console
+#   3. Run: python main.py --config=config/examples/bedrock.yaml
+# =============================================================================
+
+active_provider: bedrock
+
+providers:
+  bedrock:
+    # Use 'us.' prefix for cross-region inference profiles
+    model_id: "us.anthropic.claude-sonnet-4-20250514-v1:0"
+    region_name: "us-east-1"
+    temperature: 0.1
+    max_tokens: 8192
+    
+    # Alternative models:
+    # model_id: "us.amazon.nova-premier-v1:0"
+    # model_id: "anthropic.claude-3-5-sonnet-20241022-v2:0"  # No prefix needed in some regions
+
+agent:
+  # Use full tool set - Bedrock Claude handles many tools well
+  tool_set: full
+  conversation_window: 10

@@ -142,7 +142,7 @@ def get_weather_forecast(city: str, days: int = 7) -> str:
         data = response.json()
 
     daily = data.get("daily", {})
-    units = data.get("daily_units", {})
+    _ = data.get("daily_units", {})  # Available but not currently used
 
     weather_codes = {
         0: "☀️ Clear",
