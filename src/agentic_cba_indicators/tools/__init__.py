@@ -1,10 +1,11 @@
 # Custom tools for weather, climate, and socio-economic data
 
-# Internal help tools (not in public tool lists or __all__)
-# These are imported but intentionally excluded from REDUCED_TOOLS/FULL_TOOLS
-# They are re-exported via tools._help and used by cli.py
+# Internal help tools (for agent self-discovery)
+# These are included in tool sets for agent access but hidden from users
 from ._help import describe_tool as describe_tool
 from ._help import list_tools as list_tools
+from ._help import list_tools_by_category as list_tools_by_category
+from ._help import search_tools as search_tools
 from ._help import set_active_tools as set_active_tools
 from .agriculture import (
     get_crop_production,
@@ -77,12 +78,15 @@ from .soilgrids import get_soil_carbon, get_soil_properties, get_soil_texture
 from .weather import get_current_weather, get_weather_forecast
 
 __all__ = [
-    "FULL_TOOLS",
     # Tool sets
+    "FULL_TOOLS",
     "REDUCED_TOOLS",
+    # Data tools
     "compare_commodity_producers",
     "compare_gender_gaps",
     "compare_indicators",
+    # Internal help tools
+    "describe_tool",
     "export_indicator_selection",
     "find_feasible_methods",
     "find_indicators_by_class",
@@ -137,6 +141,8 @@ __all__ = [
     "list_fas_commodities",
     "list_indicators_by_component",
     "list_knowledge_base_stats",
+    "list_tools",
+    "list_tools_by_category",
     "search_commodity_data",
     "search_fao_indicators",
     "search_gender_indicators",
@@ -146,13 +152,21 @@ __all__ = [
     "search_methods",
     "search_sdg_indicators",
     "search_species",
+    "search_tools",
+    "search_tools",
     # Use Cases
     "search_usecases",
+    "set_active_tools",
 ]
 
 
-# Reduced tool set (19 tools) - good for most models
+# Reduced tool set (24 tools) - good for most models
 REDUCED_TOOLS = [
+    # Internal Help (agent self-discovery)
+    list_tools,
+    list_tools_by_category,
+    search_tools,
+    describe_tool,
     # Weather
     get_current_weather,
     get_weather_forecast,
@@ -180,8 +194,13 @@ REDUCED_TOOLS = [
 ]
 
 
-# Full tool set (52 tools) - for models with large context
+# Full tool set (62 tools) - for models with large context
 FULL_TOOLS = [
+    # Internal Help (agent self-discovery)
+    list_tools,
+    list_tools_by_category,
+    search_tools,
+    describe_tool,
     # Weather & Climate
     get_current_weather,
     get_weather_forecast,

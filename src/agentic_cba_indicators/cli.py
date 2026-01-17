@@ -32,11 +32,7 @@ from agentic_cba_indicators.config import (
 )
 from agentic_cba_indicators.prompts import get_system_prompt
 from agentic_cba_indicators.tools import FULL_TOOLS, REDUCED_TOOLS
-from agentic_cba_indicators.tools._help import (
-    describe_tool,
-    list_tools,
-    set_active_tools,
-)
+from agentic_cba_indicators.tools._help import set_active_tools
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -74,22 +70,19 @@ def create_agent_from_config(
         window_size=agent_config.conversation_window,
     )
 
-    # Select tool set
+    # Select tool set (includes internal help tools)
     tools = FULL_TOOLS if agent_config.tool_set == "full" else REDUCED_TOOLS
 
     # Register active tools for internal help system
+    # This allows list_tools() and search_tools() to reflect the actual tool set
     set_active_tools(tools)
 
-    # Append internal help tools (always enabled, agent-only)
-    # These are not counted in user-facing tool count
-    tools_with_help = [*tools, list_tools, describe_tool]
-
-    # Create agent with help tools included
+    # Create agent with selected tools
     agent = Agent(
         model=model,
         system_prompt=get_system_prompt(),
         conversation_manager=conversation_manager,
-        tools=tools_with_help,
+        tools=tools,
     )
 
     return agent, provider_config, agent_config

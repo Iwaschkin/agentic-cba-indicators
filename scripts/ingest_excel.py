@@ -563,7 +563,12 @@ def upsert_indicators(
     strict: bool = False,
 ) -> tuple[int, list[str]]:
     """Upsert indicator documents to ChromaDB."""
-    collection = client.get_or_create_collection(name="indicators")
+    # Use cosine distance space for normalized embeddings (nomic-embed-text)
+    # This provides proper similarity scoring in range [0, 1]
+    collection = client.get_or_create_collection(
+        name="indicators",
+        metadata={"hnsw:space": "cosine"},
+    )
 
     ids = [ind.doc_id for ind in indicators]
     documents = [ind.to_document_text() for ind in indicators]
@@ -618,7 +623,11 @@ def upsert_methods(
     strict: bool = False,
 ) -> tuple[int, list[str]]:
     """Upsert grouped method documents to ChromaDB."""
-    collection = client.get_or_create_collection(name="methods")
+    # Use cosine distance space for normalized embeddings (nomic-embed-text)
+    collection = client.get_or_create_collection(
+        name="methods",
+        metadata={"hnsw:space": "cosine"},
+    )
 
     ids = [mg.doc_id for mg in methods_groups]
     documents = [mg.to_document_text() for mg in methods_groups]

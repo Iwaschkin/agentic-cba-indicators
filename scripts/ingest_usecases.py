@@ -406,7 +406,11 @@ def upsert_usecase_docs(
     strict: bool = False,
 ) -> tuple[int, list[str]]:
     """Upsert use case documents to ChromaDB."""
-    collection = client.get_or_create_collection(name="usecases")
+    # Use cosine distance space for normalized embeddings (nomic-embed-text)
+    collection = client.get_or_create_collection(
+        name="usecases",
+        metadata={"hnsw:space": "cosine"},
+    )
 
     # Build document lists
     all_docs: list[UseCaseOverviewDoc | UseCaseOutcomeDoc] = []

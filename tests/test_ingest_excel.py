@@ -33,7 +33,7 @@ def test_upsert_indicators_skips_failed_embeddings(monkeypatch):
         def __init__(self):
             self.collection = DummyCollection()
 
-        def get_or_create_collection(self, name):
+        def get_or_create_collection(self, name, metadata=None):
             return self.collection
 
     def fake_embed_documents(documents, verbose=False, strict=False):

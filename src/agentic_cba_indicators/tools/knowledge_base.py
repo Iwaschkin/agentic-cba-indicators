@@ -8,6 +8,7 @@ Data is ingested from Excel files using scripts/ingest_excel.py.
 from __future__ import annotations
 
 import os
+import re
 import time
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
@@ -51,6 +52,32 @@ _MAX_SEARCH_RESULTS_LARGE = 100  # Component listing, comparison functions
 # Similarity threshold for indicator name matching (cosine distance)
 # Distance < 0.7 corresponds to ~65%+ similarity
 _INDICATOR_MATCH_THRESHOLD = 0.7
+
+# Default similarity threshold for filtering low-relevance results
+# Cosine similarity below this threshold indicates weak semantic match
+_DEFAULT_SIMILARITY_THRESHOLD = 0.3
+
+# Patterns for detecting exact-match queries (indicator IDs, principle codes)
+_INDICATOR_ID_PATTERN = re.compile(r"^(?:indicator\s*)?(\d{1,3})$", re.IGNORECASE)
+_PRINCIPLE_CODE_PATTERN = re.compile(r"^(\d\.\d)$")
+
+
+def _extract_exact_match_term(query: str) -> str | None:
+    """Extract exact-match term from query if it looks like an ID or code.
+
+    Returns the term to use with $contains filter, or None for semantic search.
+    """
+    query = query.strip()
+
+    # Check for indicator ID pattern (e.g., "107", "indicator 107")
+    if match := _INDICATOR_ID_PATTERN.match(query):
+        return f"ID: {match.group(1)}"
+
+    # Check for principle/criteria code (e.g., "2.1", "6.2")
+    if _PRINCIPLE_CODE_PATTERN.match(query):
+        return query
+
+    return None
 
 
 def _get_chroma_client() -> ClientAPI:
@@ -154,7 +181,9 @@ def _get_collection(name: str) -> chromadb.Collection:
 
 
 @tool
-def search_indicators(query: str, n_results: int = 5) -> str:
+def search_indicators(
+    query: str, n_results: int = 5, min_similarity: float = 0.3
+) -> str:
     """
     Search the CBA ME Indicators knowledge base for relevant indicators.
 
@@ -164,14 +193,18 @@ def search_indicators(query: str, n_results: int = 5) -> str:
     - Economic indicators (income, productivity, costs)
     - Specific principles (Natural Environment, Human Rights, etc.)
 
+    For exact ID lookups, use "indicator 107" or just "107".
+
     Args:
         query: Natural language search query describing what you're looking for
         n_results: Number of results to return (default 5, max 20)
+        min_similarity: Minimum similarity threshold (0.0-1.0, default 0.3)
 
     Returns:
         Matching indicators with their components, classes, units, and coverage
     """
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
+    min_similarity = max(0.0, min(1.0, min_similarity))
 
     try:
         collection = _get_collection("indicators")
@@ -179,36 +212,59 @@ def search_indicators(query: str, n_results: int = 5) -> str:
         if collection.count() == 0:
             return "Knowledge base is empty. Run the ingestion script first: python scripts/ingest_excel.py"
 
-        query_embedding = _get_embedding(query)
+        # Check for exact-match patterns (indicator IDs, principle codes)
+        exact_term = _extract_exact_match_term(query)
 
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results,
-            include=["documents", "metadatas", "distances"],
-        )
+        # Initialize result variables - use Any to avoid ChromaDB Metadata type issues
+        docs: list[Any] = []
+        metas: list[Any] = []
+        dists: list[float] = []
 
-        docs = results.get("documents")
-        metas = results.get("metadatas")
-        dists = results.get("distances")
+        if exact_term:
+            # Use keyword filtering for exact matches
+            results = collection.get(
+                where_document={"$contains": exact_term},
+                include=["documents", "metadatas"],
+            )
+            docs = results.get("documents") or []
+            metas = results.get("metadatas") or []
+            # No distances for exact match, treat as 100% relevance
+            dists = [0.0] * len(docs)
 
-        if not docs or not docs[0]:
+        if not exact_term or not docs:
+            # Semantic search (either no exact term, or exact match found nothing)
+            query_embedding = _get_embedding(query)
+
+            results = collection.query(
+                query_embeddings=[query_embedding],
+                n_results=n_results,
+                include=["documents", "metadatas", "distances"],
+            )
+
+            docs = (results.get("documents") or [[]])[0]
+            metas = (results.get("metadatas") or [[]])[0]
+            dists = (results.get("distances") or [[]])[0]
+
+        if not docs:
             return "No matching indicators found."
 
-        output_lines = [f"Found {len(docs[0])} matching indicators:\n"]
+        output_lines: list[str] = []
+        result_count = 0
 
-        for i, (doc, meta, dist) in enumerate(
-            zip(
-                docs[0],
-                metas[0] if metas else [],
-                dists[0] if dists else [],
-                strict=False,
-            ),
-            1,
-        ):
+        for doc, meta, dist in zip(docs, metas, dists, strict=False):
             meta = cast("dict[str, Any]", meta)
             dist = cast("float", dist)
-            similarity = 1 - (dist / 2)  # Convert distance to similarity
-            output_lines.append(f"--- Result {i} (relevance: {similarity:.0%}) ---")
+            # Cosine distance: 0 = identical, 2 = opposite. Similarity = 1 - distance.
+            similarity = max(0.0, 1 - dist)
+
+            # Filter by similarity threshold
+            if similarity < min_similarity:
+                continue
+
+            result_count += 1
+            output_lines.append(
+                f"--- Result {result_count} (relevance: {similarity:.0%}) ---"
+            )
             output_lines.append(f"ID: {meta.get('id', 'N/A')}")
             output_lines.append(f"Component: {meta.get('component', 'N/A')}")
             output_lines.append(f"Class: {meta.get('class', 'N/A')}")
@@ -219,14 +275,18 @@ def search_indicators(query: str, n_results: int = 5) -> str:
             output_lines.append(f"Criteria covered: {meta.get('total_criteria', 0)}")
             output_lines.append(f"\nDescription:\n{doc}\n")
 
-        return "\n".join(output_lines)
+        if result_count == 0:
+            return "No matching indicators found above similarity threshold."
+
+        header = f"Found {result_count} matching indicators:\n"
+        return header + "\n".join(output_lines)
 
     except Exception as e:
         return f"Error searching knowledge base: {e!s}"
 
 
 @tool
-def search_methods(query: str, n_results: int = 5) -> str:
+def search_methods(query: str, n_results: int = 5, min_similarity: float = 0.3) -> str:
     """
     Search for measurement methods in the CBA ME knowledge base.
 
@@ -238,11 +298,13 @@ def search_methods(query: str, n_results: int = 5) -> str:
     Args:
         query: Search query about measurement methods or techniques
         n_results: Number of results to return (default 5, max 20)
+        min_similarity: Minimum similarity threshold (0.0-1.0, default 0.3)
 
     Returns:
         Matching methods with evaluation criteria and citations
     """
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
+    min_similarity = max(0.0, min(1.0, min_similarity))
 
     try:
         collection = _get_collection("methods")
@@ -265,21 +327,28 @@ def search_methods(query: str, n_results: int = 5) -> str:
         if not docs or not docs[0]:
             return "No matching methods found."
 
-        output_lines = [f"Found {len(docs[0])} matching method groups:\n"]
+        output_lines: list[str] = []
+        result_count = 0
 
-        for i, (doc, meta, dist) in enumerate(
-            zip(
-                docs[0],
-                metas[0] if metas else [],
-                dists[0] if dists else [],
-                strict=False,
-            ),
-            1,
+        for doc, meta, dist in zip(
+            docs[0],
+            metas[0] if metas else [],
+            dists[0] if dists else [],
+            strict=False,
         ):
             meta = cast("dict[str, Any]", meta)
             dist = cast("float", dist)
-            similarity = 1 - (dist / 2)
-            output_lines.append(f"--- Result {i} (relevance: {similarity:.0%}) ---")
+            # Cosine distance: 0 = identical, 2 = opposite. Similarity = 1 - distance.
+            similarity = max(0.0, 1 - dist)
+
+            # Filter by similarity threshold
+            if similarity < min_similarity:
+                continue
+
+            result_count += 1
+            output_lines.append(
+                f"--- Result {result_count} (relevance: {similarity:.0%}) ---"
+            )
             output_lines.append(f"Indicator ID: {meta.get('indicator_id', 'N/A')}")
             output_lines.append(f"Indicator: {meta.get('indicator', 'N/A')}")
             output_lines.append(f"Number of Methods: {meta.get('method_count', 'N/A')}")
@@ -294,7 +363,11 @@ def search_methods(query: str, n_results: int = 5) -> str:
             )
             output_lines.append(f"\n{doc}\n")
 
-        return "\n".join(output_lines)
+        if result_count == 0:
+            return "No matching methods found above similarity threshold."
+
+        header = f"Found {result_count} matching method groups:\n"
+        return header + "\n".join(output_lines)
 
     except Exception as e:
         return f"Error searching methods: {e!s}"
@@ -415,7 +488,7 @@ def list_knowledge_base_stats() -> str:
 
 
 @tool
-def search_usecases(query: str, n_results: int = 5) -> str:
+def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3) -> str:
     """
     Search for example use case projects in the knowledge base.
 
@@ -427,11 +500,13 @@ def search_usecases(query: str, n_results: int = 5) -> str:
     Args:
         query: Search query about projects, commodities, or outcomes
         n_results: Number of results to return (default 5, max 20)
+        min_similarity: Minimum similarity threshold (0.0-1.0, default 0.3)
 
     Returns:
         Matching use case projects with their outcomes and selected indicators
     """
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
+    min_similarity = max(0.0, min(1.0, min_similarity))
 
     try:
         collection = _get_collection("usecases")
@@ -456,23 +531,30 @@ def search_usecases(query: str, n_results: int = 5) -> str:
         if not docs or not docs[0]:
             return "No matching use cases found."
 
-        output_lines = [f"Found {len(docs[0])} matching use case documents:\n"]
+        output_lines: list[str] = []
+        result_count = 0
 
-        for i, (doc, meta, dist) in enumerate(
-            zip(
-                docs[0],
-                metas[0] if metas else [],
-                dists[0] if dists else [],
-                strict=False,
-            ),
-            1,
+        for doc, meta, dist in zip(
+            docs[0],
+            metas[0] if metas else [],
+            dists[0] if dists else [],
+            strict=False,
         ):
             meta = cast("dict[str, Any]", meta)
             dist = cast("float", dist)
-            similarity = 1 - (dist / 2)
+            # Cosine distance: 0 = identical, 2 = opposite. Similarity = 1 - distance.
+            similarity = max(0.0, 1 - dist)
+
+            # Filter by similarity threshold
+            if similarity < min_similarity:
+                continue
+
+            result_count += 1
             doc_type = meta.get("doc_type", "unknown")
 
-            output_lines.append(f"--- Result {i} (relevance: {similarity:.0%}) ---")
+            output_lines.append(
+                f"--- Result {result_count} (relevance: {similarity:.0%}) ---"
+            )
             output_lines.append(f"Project: {meta.get('use_case_name', 'N/A')}")
             output_lines.append(
                 f"Country: {meta.get('country', 'N/A')} ({meta.get('region', 'N/A')})"
@@ -488,7 +570,11 @@ def search_usecases(query: str, n_results: int = 5) -> str:
 
             output_lines.append(f"\n{doc}\n")
 
-        return "\n".join(output_lines)
+        if result_count == 0:
+            return "No matching use cases found above similarity threshold."
+
+        header = f"Found {result_count} matching use case documents:\n"
+        return header + "\n".join(output_lines)
 
     except Exception as e:
         return f"Error searching use cases: {e!s}"
