@@ -77,4 +77,5 @@ def test_upsert_indicators_skips_failed_embeddings(monkeypatch):
 
     assert count == 1
     assert failed == ["indicator:1"]
+    assert client.collection.upserted is not None
     assert client.collection.upserted["ids"] == ["indicator:2"]

@@ -626,3 +626,4 @@ def search_commodity_data(query: str, n_results: int = 10) -> str:
         )
 
     return "\n".join(output)
+    return "\n".join(output)

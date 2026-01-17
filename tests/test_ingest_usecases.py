@@ -67,4 +67,5 @@ def test_upsert_usecase_docs_skips_failed_embeddings(monkeypatch):
 
     assert count == 1
     assert failed == ["usecase:slug:overview"]
+    assert client.collection.upserted is not None
     assert client.collection.upserted["ids"] == ["usecase:slug:outcome:1"]
