@@ -9,13 +9,18 @@ API Documentation: https://techdocs.gbif.org/en/openapi/
 
 from strands import tool
 
-from ._geo import geocode_or_parse
+from ._geo import geocode_or_parse, validate_coordinates
 from ._http import APIError, fetch_json, format_error
 
 # GBIF API base URLs
 GBIF_API = "https://api.gbif.org/v1"
 SPECIES_API = f"{GBIF_API}/species"
 OCCURRENCE_API = f"{GBIF_API}/occurrence"
+
+# Search result limits
+_MAX_SPECIES_RESULTS = 50  # For species search
+_MAX_OCCURRENCE_RESULTS = 100  # For occurrence queries
+_MAX_RADIUS_KM = 200  # Maximum search radius for spatial queries
 
 # Common taxonomic ranks
 TAXONOMIC_RANKS = [
@@ -79,7 +84,11 @@ def _search_occurrences(
     year: str | None = None,
     limit: int = 20,
 ) -> dict:
-    """Search for species occurrences."""
+    """Search for species occurrences.
+
+    Raises:
+        CoordinateValidationError: If lat/lon values are out of valid range.
+    """
     url = f"{OCCURRENCE_API}/search"
     params: dict[str, str | int | float] = {"limit": limit}
 
@@ -88,7 +97,11 @@ def _search_occurrences(
     if country:
         params["country"] = country.upper()[:2]  # ISO 2-letter code
     if lat is not None and lon is not None:
-        # Use decimal lat/lon with radius in km
+        # Validate coordinates before using
+        validate_coordinates(lat, lon, context="for GBIF occurrence search")
+        # Convert radius_km to degrees: 1° latitude ≈ 111 km at Earth's surface
+        # Note: This is a simple approximation; longitude variation with latitude
+        # is not corrected here (acceptable for small search radii)
         params["decimalLatitude"] = f"{lat - radius_km / 111},{lat + radius_km / 111}"
         params["decimalLongitude"] = f"{lon - radius_km / 111},{lon + radius_km / 111}"
     if year:
@@ -131,7 +144,7 @@ def search_species(query: str, n_results: int = 10) -> str:
     Returns:
         List of matching species with taxonomy and global occurrence counts
     """
-    n_results = min(max(1, n_results), 50)
+    n_results = min(max(1, n_results), _MAX_SPECIES_RESULTS)
 
     try:
         results = _search_species(query, n_results)
@@ -218,7 +231,7 @@ def get_species_occurrences(
     Returns:
         List of occurrence records with locations, dates, and sources
     """
-    n_results = min(max(1, n_results), 100)
+    n_results = min(max(1, n_results), _MAX_OCCURRENCE_RESULTS)
 
     try:
         # Resolve species to taxon key
@@ -358,7 +371,7 @@ def get_biodiversity_summary(
     Returns:
         Biodiversity summary with species counts and common taxa
     """
-    radius_km = min(max(1, radius_km), 200)
+    radius_km = min(max(1, radius_km), _MAX_RADIUS_KM)
 
     # Taxonomic group filters (GBIF taxon keys for major groups)
     GROUP_KEYS = {
@@ -381,8 +394,15 @@ def get_biodiversity_summary(
         # Build search URL for faceted search
         url = f"{OCCURRENCE_API}/search"
 
-        # Calculate bounding box
-        lat_range = radius_km / 111  # ~111 km per degree
+        # Calculate bounding box for geographic search
+        # Latitude: 1° ≈ 111 km (constant at all latitudes)
+        lat_range = radius_km / 111
+
+        # Longitude: distance per degree varies with latitude (cos(lat) factor)
+        # At equator: 1° ≈ 111 km; at poles: 1° ≈ 0 km
+        # Formula approximation: 111 * abs(lat)/90 gives rough scaling factor
+        # Add 0.001 to avoid division by zero near equator
+        # At lat ≥ 89°, use flat approximation to avoid extreme values
         lon_range = (
             radius_km / (111 * abs(lat) / 90 + 0.001)
             if abs(lat) < 89

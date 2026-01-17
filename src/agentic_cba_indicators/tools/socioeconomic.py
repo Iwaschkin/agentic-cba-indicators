@@ -1,77 +1,16 @@
 """Socio-economic tools using World Bank and REST Countries APIs (free, no API key required)."""
 
-import httpx
 from strands import tool
 
-# Country code mapping (common names to ISO codes)
-COUNTRY_CODES = {
-    "usa": "US",
-    "united states": "US",
-    "america": "US",
-    "uk": "GB",
-    "united kingdom": "GB",
-    "britain": "GB",
-    "england": "GB",
-    "china": "CN",
-    "japan": "JP",
-    "germany": "DE",
-    "france": "FR",
-    "india": "IN",
-    "brazil": "BR",
-    "russia": "RU",
-    "canada": "CA",
-    "australia": "AU",
-    "italy": "IT",
-    "spain": "ES",
-    "mexico": "MX",
-    "south korea": "KR",
-    "korea": "KR",
-    "indonesia": "ID",
-    "netherlands": "NL",
-    "switzerland": "CH",
-    "sweden": "SE",
-    "poland": "PL",
-    "belgium": "BE",
-    "argentina": "AR",
-    "nigeria": "NG",
-    "south africa": "ZA",
-    "egypt": "EG",
-    "pakistan": "PK",
-    "bangladesh": "BD",
-    "vietnam": "VN",
-    "philippines": "PH",
-    "thailand": "TH",
-    "malaysia": "MY",
-    "singapore": "SG",
-    "new zealand": "NZ",
-    "ireland": "IE",
-    "portugal": "PT",
-    "greece": "GR",
-    "czech republic": "CZ",
-    "romania": "RO",
-    "hungary": "HU",
-    "austria": "AT",
-    "israel": "IL",
-    "saudi arabia": "SA",
-    "uae": "AE",
-    "united arab emirates": "AE",
-    "turkey": "TR",
-    "norway": "NO",
-    "denmark": "DK",
-    "finland": "FI",
-    "chile": "CL",
-    "colombia": "CO",
-    "peru": "PE",
-    "venezuela": "VE",
-    "ukraine": "UA",
-}
+from ._http import APIError, fetch_json, format_error
+from ._mappings import COUNTRY_CODES_ISO2, normalize_key
 
 
 def _get_country_code(country: str) -> str:
     """Get ISO country code from country name."""
-    country_lower = country.lower().strip()
-    if country_lower in COUNTRY_CODES:
-        return COUNTRY_CODES[country_lower]
+    country_lower = normalize_key(country)
+    if country_lower in COUNTRY_CODES_ISO2:
+        return COUNTRY_CODES_ISO2[country_lower]
     # If already a 2-letter code
     if len(country) == 2:
         return country.upper()
@@ -94,24 +33,20 @@ def get_country_indicators(country: str) -> str:
     code = _get_country_code(country)
 
     # Get basic country info from REST Countries
-    with httpx.Client(timeout=30.0) as client:
-        try:
-            response = client.get(f"https://restcountries.com/v3.1/alpha/{code}")
-            if response.status_code != 200:
-                # Try by name
-                response = client.get(
-                    f"https://restcountries.com/v3.1/name/{country}",
-                    params={"fullText": "false"},
-                )
+    try:
+        data = fetch_json(f"https://restcountries.com/v3.1/alpha/{code}")
+        if isinstance(data, dict) and data.get("status") == 404:
+            data = fetch_json(
+                f"https://restcountries.com/v3.1/name/{country}",
+                params={"fullText": "false"},
+            )
+        if isinstance(data, list):
+            data = data[0]
+    except APIError as e:
+        return format_error(e, "fetching country data")
 
-            if response.status_code != 200:
-                return f"Could not find country: {country}"
-
-            data = response.json()
-            if isinstance(data, list):
-                data = data[0]
-        except Exception as e:
-            return f"Error fetching country data: {e!s}"
+    if not isinstance(data, dict):
+        return f"Could not find country: {country}"
 
     name = data.get("name", {}).get("common", country)
     official_name = data.get("name", {}).get("official", name)
@@ -223,24 +158,16 @@ def get_world_bank_data(country: str, indicator: str = "gdp") -> str:
 
     wb_code, description = indicators[indicator_lower]
 
-    with httpx.Client(timeout=30.0) as client:
-        try:
-            response = client.get(
-                f"https://api.worldbank.org/v2/country/{code}/indicator/{wb_code}",
-                params={"format": "json", "per_page": 20, "date": "2010:2024"},
-            )
-
-            if response.status_code != 200:
-                return f"Error fetching World Bank data: {response.status_code}"
-
-            data = response.json()
-
-            if len(data) < 2 or not data[1]:
-                return f"No data available for {country} - {description}"
-
-            records = data[1]
-        except Exception as e:
-            return f"Error fetching World Bank data: {e!s}"
+    try:
+        data = fetch_json(
+            f"https://api.worldbank.org/v2/country/{code}/indicator/{wb_code}",
+            params={"format": "json", "per_page": 20, "date": "2010:2024"},
+        )
+        if not isinstance(data, list) or len(data) < 2 or not data[1]:
+            return f"No data available for {country} - {description}"
+        records = data[1]
+    except APIError as e:
+        return format_error(e, "fetching World Bank data")
 
     # Format the data
     country_name = (

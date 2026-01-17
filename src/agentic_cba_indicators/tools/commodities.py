@@ -16,6 +16,8 @@ from typing import Any
 import httpx
 from strands import tool
 
+from ._http import DEFAULT_TIMEOUT, create_client
+
 # API configuration
 FAS_BASE_URL = "https://api.fas.usda.gov"
 API_KEY_HEADER = "X-Api-Key"
@@ -137,8 +139,8 @@ def _make_request(endpoint: str, params: dict | None = None) -> dict[str, Any] |
     url = f"{FAS_BASE_URL}{endpoint}"
     headers = {API_KEY_HEADER: api_key}
 
-    with httpx.Client(timeout=30.0) as client:
-        response = client.get(url, headers=headers, params=params)
+    with create_client(timeout=DEFAULT_TIMEOUT, headers=headers) as client:
+        response = client.get(url, params=params)
         response.raise_for_status()
         return response.json()
 

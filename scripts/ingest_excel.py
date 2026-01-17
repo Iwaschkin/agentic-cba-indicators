@@ -30,7 +30,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import chromadb
-import httpx
 
 if TYPE_CHECKING:
     from chromadb.api import ClientAPI
@@ -51,6 +50,10 @@ class IngestionSummary(TypedDict):
 # Add src to path for agentic_cba_indicators imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from agentic_cba_indicators.paths import get_kb_path
+from agentic_cba_indicators.tools._embedding import (
+    EMBEDDING_MODEL,
+    get_embeddings_batch,
+)
 
 # =============================================================================
 # Configuration
@@ -61,22 +64,7 @@ DEFAULT_EXCEL_FILE = (
 )
 KB_PATH = get_kb_path()
 
-# Ollama settings (configurable via environment variables)
-# Supports both local Ollama and Ollama Cloud (https://ollama.com)
-import os
-
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")  # Optional, for Ollama Cloud
-EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 BATCH_SIZE = 5  # Embedding batch size (smaller for large documents)
-
-
-def _get_ollama_headers() -> dict[str, str]:
-    """Get headers for Ollama API requests, including auth if API key is set."""
-    headers = {"Content-Type": "application/json"}
-    if OLLAMA_API_KEY:
-        headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
-    return headers
 
 
 # =============================================================================
@@ -536,45 +524,11 @@ def build_methods_group_docs(
 # =============================================================================
 
 
-def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings for a batch of texts using Ollama (local or cloud)."""
-    # Truncate texts that are too long for the embedding model
-    MAX_CHARS = 6000  # nomic-embed-text has ~8k token limit, be conservative
-    truncated_texts = [
-        text[:MAX_CHARS] + "..." if len(text) > MAX_CHARS else text for text in texts
-    ]
-
-    headers = _get_ollama_headers()
-    with httpx.Client(timeout=120.0) as client:
-        response = client.post(
-            f"{OLLAMA_HOST}/api/embed",
-            json={"model": EMBEDDING_MODEL, "input": truncated_texts},
-            headers=headers,
-        )
-        if response.status_code != 200:
-            # Fall back to individual embedding if batch fails
-            print("      Batch failed, falling back to individual embedding...")
-            embeddings = []
-            for i, text in enumerate(truncated_texts):
-                try:
-                    single_resp = client.post(
-                        f"{OLLAMA_HOST}/api/embed",
-                        json={"model": EMBEDDING_MODEL, "input": text},
-                        headers=headers,
-                    )
-                    single_resp.raise_for_status()
-                    embeddings.append(single_resp.json()["embeddings"][0])
-                except Exception as e:
-                    print(f"      Error embedding doc {i} (len={len(text)}): {e}")
-                    # Return zero vector as fallback
-                    embeddings.append([0.0] * 768)
-            return embeddings
-        return response.json()["embeddings"]
-
-
-def embed_documents(documents: list[str], verbose: bool = False) -> list[list[float]]:
+def embed_documents(
+    documents: list[str], verbose: bool = False, strict: bool = False
+) -> list[list[float] | None]:
     """Embed all documents in batches."""
-    all_embeddings = []
+    all_embeddings: list[list[float] | None] = []
     total_batches = (len(documents) + BATCH_SIZE - 1) // BATCH_SIZE
 
     for i in range(0, len(documents), BATCH_SIZE):
@@ -584,7 +538,7 @@ def embed_documents(documents: list[str], verbose: bool = False) -> list[list[fl
         if verbose:
             print(f"    Embedding batch {batch_num}/{total_batches}...")
 
-        embeddings = get_embeddings_batch(batch)
+        embeddings = get_embeddings_batch(batch, strict=strict)
         all_embeddings.extend(embeddings)
 
     return all_embeddings
@@ -606,7 +560,8 @@ def upsert_indicators(
     indicators: list[IndicatorDoc],
     verbose: bool = False,
     dry_run: bool = False,
-) -> int:
+    strict: bool = False,
+) -> tuple[int, list[str]]:
     """Upsert indicator documents to ChromaDB."""
     collection = client.get_or_create_collection(name="indicators")
 
@@ -619,20 +574,40 @@ def upsert_indicators(
         if verbose and indicators:
             print(f"    Sample ID: {ids[0]}")
             print(f"    Sample doc (first 200 chars): {documents[0][:200]}...")
-        return len(indicators)
+        return len(indicators), []
 
     print(f"  Embedding {len(documents)} indicator documents...")
-    embeddings = embed_documents(documents, verbose=verbose)
+    embeddings = embed_documents(documents, verbose=verbose, strict=strict)
+
+    filtered_ids: list[str] = []
+    filtered_docs: list[str] = []
+    filtered_metas: list[dict] = []
+    filtered_embeddings: list[list[float]] = []
+    failed_ids: list[str] = []
+
+    for doc_id, doc, meta, embedding in zip(
+        ids, documents, metadatas, embeddings, strict=False
+    ):
+        if embedding is None:
+            failed_ids.append(doc_id)
+            continue
+        filtered_ids.append(doc_id)
+        filtered_docs.append(doc)
+        filtered_metas.append(meta)
+        filtered_embeddings.append(embedding)
+
+    if failed_ids:
+        print(f"  ⚠ Skipping {len(failed_ids)} indicators due to embedding failures")
 
     print("  Upserting to 'indicators' collection...")
     collection.upsert(
-        ids=ids,
-        embeddings=embeddings,  # type: ignore[arg-type]
-        documents=documents,
-        metadatas=metadatas,  # type: ignore[arg-type]
+        ids=filtered_ids,
+        embeddings=filtered_embeddings,  # type: ignore[arg-type]
+        documents=filtered_docs,
+        metadatas=filtered_metas,  # type: ignore[arg-type]
     )
 
-    return len(indicators)
+    return len(filtered_ids), failed_ids
 
 
 def upsert_methods(
@@ -640,7 +615,8 @@ def upsert_methods(
     methods_groups: list[MethodsGroupDoc],
     verbose: bool = False,
     dry_run: bool = False,
-) -> int:
+    strict: bool = False,
+) -> tuple[int, list[str]]:
     """Upsert grouped method documents to ChromaDB."""
     collection = client.get_or_create_collection(name="methods")
 
@@ -653,20 +629,40 @@ def upsert_methods(
         if verbose and methods_groups:
             print(f"    Sample ID: {ids[0]}")
             print(f"    Sample methods count: {metadatas[0]['method_count']}")
-        return len(methods_groups)
+        return len(methods_groups), []
 
     print(f"  Embedding {len(documents)} method group documents...")
-    embeddings = embed_documents(documents, verbose=verbose)
+    embeddings = embed_documents(documents, verbose=verbose, strict=strict)
+
+    filtered_ids: list[str] = []
+    filtered_docs: list[str] = []
+    filtered_metas: list[dict] = []
+    filtered_embeddings: list[list[float]] = []
+    failed_ids: list[str] = []
+
+    for doc_id, doc, meta, embedding in zip(
+        ids, documents, metadatas, embeddings, strict=False
+    ):
+        if embedding is None:
+            failed_ids.append(doc_id)
+            continue
+        filtered_ids.append(doc_id)
+        filtered_docs.append(doc)
+        filtered_metas.append(meta)
+        filtered_embeddings.append(embedding)
+
+    if failed_ids:
+        print(f"  ⚠ Skipping {len(failed_ids)} method groups due to embedding failures")
 
     print("  Upserting to 'methods' collection...")
     collection.upsert(
-        ids=ids,
-        embeddings=embeddings,  # type: ignore[arg-type]
-        documents=documents,
-        metadatas=metadatas,  # type: ignore[arg-type]
+        ids=filtered_ids,
+        embeddings=filtered_embeddings,  # type: ignore[arg-type]
+        documents=filtered_docs,
+        metadatas=filtered_metas,  # type: ignore[arg-type]
     )
 
-    return len(methods_groups)
+    return len(filtered_ids), failed_ids
 
 
 # =============================================================================
@@ -679,6 +675,7 @@ def ingest(
     clear: bool = False,
     verbose: bool = False,
     dry_run: bool = False,
+    strict: bool = False,
 ) -> IngestionSummary:
     """
     Main ingestion function.
@@ -698,8 +695,9 @@ def ingest(
     if not dry_run:
         print("Testing Ollama connection...")
         try:
-            test_emb = get_embeddings_batch(["test"])
-            print(f"  ✓ Ollama ready (embedding dim: {len(test_emb[0])})")
+            test_emb = get_embeddings_batch(["test"], strict=True)
+            emb_dim = len(test_emb[0]) if test_emb[0] is not None else 0
+            print(f"  ✓ Ollama ready (embedding dim: {emb_dim})")
         except Exception as e:
             summary["errors"].append(f"Ollama connection failed: {e}")
             print(f"  ✗ Ollama error: {e}")
@@ -753,14 +751,32 @@ def ingest(
 
     # Step 6: Upsert to ChromaDB
     print("\n[1/2] Processing indicators...")
-    summary["indicators_count"] = upsert_indicators(
-        client, indicators, verbose=verbose, dry_run=dry_run
-    )
+    try:
+        indicators_count, indicator_failures = upsert_indicators(
+            client, indicators, verbose=verbose, dry_run=dry_run, strict=strict
+        )
+        summary["indicators_count"] = indicators_count
+        if indicator_failures:
+            summary["errors"].append(
+                f"Embedding failed for {len(indicator_failures)} indicator documents"
+            )
+    except RuntimeError as e:
+        summary["errors"].append(str(e))
+        return summary
 
     print("\n[2/2] Processing methods...")
-    summary["methods_groups_count"] = upsert_methods(
-        client, methods_groups, verbose=verbose, dry_run=dry_run
-    )
+    try:
+        methods_count, methods_failures = upsert_methods(
+            client, methods_groups, verbose=verbose, dry_run=dry_run, strict=strict
+        )
+        summary["methods_groups_count"] = methods_count
+        if methods_failures:
+            summary["errors"].append(
+                f"Embedding failed for {len(methods_failures)} method group documents"
+            )
+    except RuntimeError as e:
+        summary["errors"].append(str(e))
+        return summary
     summary["total_methods"] = total_methods
 
     return summary
@@ -803,6 +819,11 @@ Examples:
         action="store_true",
         help="Enable verbose output",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail ingestion on any embedding error",
+    )
     args = parser.parse_args()
 
     if not args.file.exists():
@@ -823,6 +844,7 @@ Examples:
         clear=args.clear,
         verbose=args.verbose,
         dry_run=args.dry_run,
+        strict=args.strict,
     )
 
     # Print summary

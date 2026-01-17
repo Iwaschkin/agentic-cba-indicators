@@ -9,7 +9,7 @@ API Documentation: https://rest.isric.org/soilgrids/v2.0/docs
 
 from strands import tool
 
-from ._geo import format_location, geocode_or_parse
+from ._geo import format_location, geocode_or_parse, validate_coordinates
 from ._http import APIError, fetch_json, format_error
 
 # SoilGrids API base URL
@@ -89,7 +89,11 @@ def _fetch_soil_data(
 
     Raises:
         APIError: On API errors
+        CoordinateValidationError: If coordinates are out of range
     """
+    # Validate coordinates before API call
+    validate_coordinates(lat, lon, context="for SoilGrids query")
+
     url = f"{SOILGRIDS_BASE}/properties/query"
 
     # Build query parameters

@@ -8,18 +8,22 @@ Data is ingested from Excel files using scripts/ingest_excel.py.
 from __future__ import annotations
 
 import os
+import time
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import chromadb
-import httpx
 from strands import tool
 
+from agentic_cba_indicators.logging_config import get_logger
 from agentic_cba_indicators.paths import get_kb_path
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+from ._embedding import get_embedding as _get_embedding
 
+if TYPE_CHECKING:
     from chromadb.api import ClientAPI
+
+# Module logger
+logger = get_logger(__name__)
 
 
 class IndicatorDataDict(TypedDict):
@@ -31,43 +35,122 @@ class IndicatorDataDict(TypedDict):
     method_meta: dict[str, Any]
 
 
-# Ollama embedding settings (configurable via environment variables)
-# Supports both local Ollama and Ollama Cloud (https://ollama.com)
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")  # Optional, for Ollama Cloud
-EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
+class ChromaDBError(Exception):
+    """Raised when ChromaDB operations fail after retries."""
 
 
-def _get_ollama_headers() -> dict[str, str]:
-    """Get headers for Ollama API requests, including auth if API key is set."""
-    headers = {"Content-Type": "application/json"}
-    if OLLAMA_API_KEY:
-        headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
-    return headers
+# Retry settings for ChromaDB operations
+_CHROMADB_RETRIES = int(os.environ.get("CHROMADB_RETRIES", "3"))
+_CHROMADB_BACKOFF = float(os.environ.get("CHROMADB_BACKOFF", "0.5"))
 
+# Search result limits (prevents excessive context in LLM prompts)
+_MAX_SEARCH_RESULTS_DEFAULT = 20  # Standard search functions
+_MAX_SEARCH_RESULTS_MEDIUM = 50  # Principle/class browsing functions
+_MAX_SEARCH_RESULTS_LARGE = 100  # Component listing, comparison functions
 
-def _get_embedding(text: str) -> Sequence[float]:
-    """Generate embedding using Ollama (local or cloud)."""
-    with httpx.Client(timeout=60.0) as client:
-        response = client.post(
-            f"{OLLAMA_HOST}/api/embed",
-            json={"model": EMBEDDING_MODEL, "input": text},
-            headers=_get_ollama_headers(),
-        )
-        response.raise_for_status()
-        return response.json()["embeddings"][0]
+# Similarity threshold for indicator name matching (cosine distance)
+# Distance < 0.7 corresponds to ~65%+ similarity
+_INDICATOR_MATCH_THRESHOLD = 0.7
 
 
 def _get_chroma_client() -> ClientAPI:
-    """Get or create ChromaDB client."""
+    """Get or create ChromaDB client with retry logic.
+
+    Retries on transient failures (file locking, resource exhaustion).
+    Retry count and backoff configurable via CHROMADB_RETRIES and CHROMADB_BACKOFF env vars.
+
+    Returns:
+        ChromaDB PersistentClient instance
+
+    Raises:
+        ChromaDBError: If client creation fails after retries
+    """
     kb_path = get_kb_path()
-    return chromadb.PersistentClient(path=str(kb_path))
+    last_error: Exception | None = None
+
+    for attempt in range(_CHROMADB_RETRIES + 1):
+        try:
+            return chromadb.PersistentClient(path=str(kb_path))
+        except Exception as e:
+            last_error = e
+            # Check for known transient errors
+            error_str = str(e).lower()
+            is_transient = any(
+                pattern in error_str
+                for pattern in ["locked", "busy", "timeout", "connection", "resource"]
+            )
+
+            if not is_transient or attempt >= _CHROMADB_RETRIES:
+                # Non-transient error or max retries reached
+                raise ChromaDBError(f"ChromaDB client creation failed: {e}") from e
+
+            # Wait before retry with exponential backoff
+            delay = _CHROMADB_BACKOFF * (2**attempt)
+            logger.debug(
+                "ChromaDB client creation failed (attempt %d/%d), retrying in %.1fs: %s",
+                attempt + 1,
+                _CHROMADB_RETRIES + 1,
+                delay,
+                e,
+            )
+            time.sleep(delay)
+
+    # Should not reach here, but just in case
+    raise ChromaDBError(
+        f"ChromaDB client creation failed after {_CHROMADB_RETRIES + 1} attempts: {last_error}"
+    )
 
 
 def _get_collection(name: str) -> chromadb.Collection:
-    """Get a ChromaDB collection."""
-    client = _get_chroma_client()
-    return client.get_or_create_collection(name=name)
+    """Get a ChromaDB collection with retry logic.
+
+    Retries on transient failures (file locking, resource exhaustion).
+
+    Args:
+        name: Collection name to get or create
+
+    Returns:
+        ChromaDB Collection instance
+
+    Raises:
+        ChromaDBError: If collection access fails after retries
+    """
+    last_error: Exception | None = None
+
+    for attempt in range(_CHROMADB_RETRIES + 1):
+        try:
+            client = _get_chroma_client()
+            return client.get_or_create_collection(name=name)
+        except ChromaDBError:
+            # Re-raise our own errors without wrapping
+            raise
+        except Exception as e:
+            last_error = e
+            error_str = str(e).lower()
+            is_transient = any(
+                pattern in error_str
+                for pattern in ["locked", "busy", "timeout", "connection", "resource"]
+            )
+
+            if not is_transient or attempt >= _CHROMADB_RETRIES:
+                raise ChromaDBError(
+                    f"ChromaDB collection '{name}' access failed: {e}"
+                ) from e
+
+            delay = _CHROMADB_BACKOFF * (2**attempt)
+            logger.debug(
+                "ChromaDB collection '%s' access failed (attempt %d/%d), retrying in %.1fs: %s",
+                name,
+                attempt + 1,
+                _CHROMADB_RETRIES + 1,
+                delay,
+                e,
+            )
+            time.sleep(delay)
+
+    raise ChromaDBError(
+        f"ChromaDB collection '{name}' access failed after {_CHROMADB_RETRIES + 1} attempts: {last_error}"
+    )
 
 
 @tool
@@ -88,7 +171,7 @@ def search_indicators(query: str, n_results: int = 5) -> str:
     Returns:
         Matching indicators with their components, classes, units, and coverage
     """
-    n_results = min(max(1, n_results), 20)
+    n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
 
     try:
         collection = _get_collection("indicators")
@@ -159,7 +242,7 @@ def search_methods(query: str, n_results: int = 5) -> str:
     Returns:
         Matching methods with evaluation criteria and citations
     """
-    n_results = min(max(1, n_results), 20)
+    n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
 
     try:
         collection = _get_collection("methods")
@@ -348,7 +431,7 @@ def search_usecases(query: str, n_results: int = 5) -> str:
     Returns:
         Matching use case projects with their outcomes and selected indicators
     """
-    n_results = min(max(1, n_results), 20)
+    n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
 
     try:
         collection = _get_collection("usecases")
@@ -526,9 +609,9 @@ def _resolve_indicator_id(indicator: str | int) -> tuple[int | None, str | None]
     if not query_metas or not query_metas[0]:
         return None, f"No indicator found matching '{indicator}'"
 
-    # Check if it's a reasonable match (distance < 0.7 means ~65%+ similarity)
+    # Check if it's a reasonable match using similarity threshold
     distance = cast("float", query_dists[0][0]) if query_dists else 1.0
-    if distance > 0.7:
+    if distance > _INDICATOR_MATCH_THRESHOLD:
         return (
             None,
             f"No close match found for '{indicator}'. Best match was too different.",
@@ -693,7 +776,7 @@ def find_indicators_by_principle(
     """
     import json
 
-    n_results = min(max(1, n_results), 50)
+    n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_MEDIUM)
 
     # Resolve principle input to ID
     principle_id = None
@@ -979,7 +1062,7 @@ def list_indicators_by_component(component: str, n_results: int = 30) -> str:
     Returns:
         List of indicators grouped by class within the component
     """
-    n_results = min(max(1, n_results), 100)
+    n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_LARGE)
 
     # Normalize component input
     component_map = {
@@ -1350,7 +1433,7 @@ def find_indicators_by_class(class_name: str, n_results: int = 30) -> str:
     Returns:
         List of indicators in the specified class with their details
     """
-    n_results = min(max(1, n_results), 100)
+    n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_LARGE)
 
     try:
         collection = _get_collection("indicators")
@@ -1458,7 +1541,7 @@ def find_indicators_by_measurement_approach(approach: str, n_results: int = 30) 
     Returns:
         List of indicators measurable with the specified approach
     """
-    n_results = min(max(1, n_results), 100)
+    n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_LARGE)
 
     # Map input to metadata field
     approach_map = {

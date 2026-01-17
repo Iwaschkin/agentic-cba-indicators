@@ -1,4 +1,11 @@
 # Custom tools for weather, climate, and socio-economic data
+
+# Internal help tools (not in public tool lists or __all__)
+# These are imported but intentionally excluded from REDUCED_TOOLS/FULL_TOOLS
+# They are re-exported via tools._help and used by cli.py
+from ._help import describe_tool as describe_tool
+from ._help import list_tools as list_tools
+from ._help import set_active_tools as set_active_tools
 from .agriculture import (
     get_crop_production,
     get_forest_statistics,

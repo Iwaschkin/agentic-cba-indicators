@@ -1,26 +1,9 @@
 """Climate tools using Open-Meteo Climate API (free, no API key required)."""
 
-import httpx
 from strands import tool
 
-
-def _geocode_city_sync(city: str) -> dict | None:
-    """Synchronous geocoding to get coordinates from city name."""
-    with httpx.Client() as client:
-        response = client.get(
-            "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1, "language": "en", "format": "json"},
-        )
-        data = response.json()
-        if "results" in data and len(data["results"]) > 0:
-            result = data["results"][0]
-            return {
-                "name": result.get("name"),
-                "country": result.get("country"),
-                "latitude": result.get("latitude"),
-                "longitude": result.get("longitude"),
-            }
-        return None
+from ._geo import geocode_city
+from ._http import APIError, fetch_json, format_error
 
 
 @tool
@@ -35,13 +18,12 @@ def get_climate_data(city: str) -> str:
     Returns:
         Climate normals including monthly temperatures and precipitation
     """
-    location = _geocode_city_sync(city)
+    location = geocode_city(city)
     if not location:
         return f"Could not find location: {city}"
 
-    with httpx.Client() as client:
-        # Get climate normals (1991-2020 reference period)
-        response = client.get(
+    try:
+        data = fetch_json(
             "https://climate-api.open-meteo.com/v1/climate",
             params={
                 "latitude": location["latitude"],
@@ -52,7 +34,11 @@ def get_climate_data(city: str) -> str:
                 "daily": "temperature_2m_mean,temperature_2m_max,temperature_2m_min,precipitation_sum",
             },
         )
-        data = response.json()
+    except APIError as e:
+        return format_error(e, "fetching climate normals")
+
+    if not isinstance(data, dict):
+        return "Error fetching climate normals: unexpected response format"
 
     if "error" in data:
         return f"Climate data not available for {city}: {data.get('reason', 'Unknown error')}"
@@ -131,14 +117,14 @@ def get_historical_climate(city: str, year: int) -> str:
     Returns:
         Historical climate summary for the specified year
     """
-    location = _geocode_city_sync(city)
+    location = geocode_city(city)
     if not location:
         return f"Could not find location: {city}"
 
     year = min(max(1950, year), 2023)
 
-    with httpx.Client() as client:
-        response = client.get(
+    try:
+        data = fetch_json(
             "https://archive-api.open-meteo.com/v1/archive",
             params={
                 "latitude": location["latitude"],
@@ -149,7 +135,11 @@ def get_historical_climate(city: str, year: int) -> str:
                 "timezone": "auto",
             },
         )
-        data = response.json()
+    except APIError as e:
+        return format_error(e, "fetching historical climate data")
+
+    if not isinstance(data, dict):
+        return "Error fetching historical climate data: unexpected response format"
 
     if "error" in data:
         return f"Historical data not available: {data.get('reason', 'Unknown error')}"

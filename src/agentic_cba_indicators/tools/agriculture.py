@@ -13,35 +13,10 @@ from typing import Any
 from strands import tool
 
 from ._http import APIError, fetch_json, format_error
+from ._mappings import COUNTRY_CODES_FAO, normalize_key
 
 # FAO FAOSTAT API endpoints
 FAOSTAT_API = "https://fenixservices.fao.org/faostat/api/v1"
-
-# Common FAO country codes (ISO 3166-1 numeric)
-COUNTRY_CODES = {
-    "brazil": 21,
-    "chad": 39,
-    "china": 41,
-    "ethiopia": 62,
-    "france": 68,
-    "germany": 79,
-    "ghana": 81,
-    "india": 100,
-    "indonesia": 101,
-    "japan": 110,
-    "kenya": 114,
-    "mexico": 138,
-    "nigeria": 159,
-    "south africa": 202,
-    "spain": 203,
-    "tanzania": 215,
-    "uganda": 226,
-    "united kingdom": 229,
-    "uk": 229,
-    "usa": 231,
-    "united states": 231,
-    "vietnam": 237,
-}
 
 # Forest indicator elements (FAO element codes)
 FOREST_ELEMENTS = {
@@ -112,8 +87,8 @@ CROP_ITEMS = {
 
 def _get_country_code(country: str) -> int | None:
     """Convert country name to FAO code."""
-    normalized = country.lower().strip()
-    return COUNTRY_CODES.get(normalized)
+    normalized = normalize_key(country)
+    return COUNTRY_CODES_FAO.get(normalized)
 
 
 def _fetch_faostat_data(
@@ -216,7 +191,7 @@ def get_crop_production(country: str, crop: str) -> str:
     """
     country_code = _get_country_code(country)
     if not country_code:
-        available = ", ".join(sorted(COUNTRY_CODES.keys())[:10])
+        available = ", ".join(sorted(COUNTRY_CODES_FAO.keys())[:10])
         return f"Country '{country}' not found. Examples: {available}"
 
     crop_normalized = crop.lower().strip().replace(" ", "_")

@@ -13,6 +13,7 @@ from typing import Any
 from strands import tool
 
 from ._http import APIError, fetch_json, format_error
+from ._mappings import get_iso3_code
 
 # World Bank API v2 base URL
 WB_API = "https://api.worldbank.org/v2"
@@ -166,43 +167,6 @@ GENDER_INDICATORS = {
     },
 }
 
-# Country name to ISO code mapping
-COUNTRY_CODES = {
-    "brazil": "BRA",
-    "chad": "TCD",
-    "china": "CHN",
-    "ethiopia": "ETH",
-    "france": "FRA",
-    "germany": "DEU",
-    "ghana": "GHA",
-    "india": "IND",
-    "indonesia": "IDN",
-    "japan": "JPN",
-    "kenya": "KEN",
-    "mexico": "MEX",
-    "nigeria": "NGA",
-    "south africa": "ZAF",
-    "spain": "ESP",
-    "tanzania": "TZA",
-    "uganda": "UGA",
-    "united kingdom": "GBR",
-    "uk": "GBR",
-    "usa": "USA",
-    "united states": "USA",
-    "vietnam": "VNM",
-    "world": "WLD",
-}
-
-
-def _get_country_code(country: str) -> str:
-    """Convert country name to ISO 3-letter code."""
-    normalized = country.lower().strip()
-    if normalized in COUNTRY_CODES:
-        return COUNTRY_CODES[normalized]
-    if len(country) == 3 and country.isalpha():
-        return country.upper()
-    return country.upper()[:3]
-
 
 def _fetch_wb_indicator(
     country: str, indicator_id: str, start_year: int = 2010, end_year: int = 2024
@@ -248,7 +212,7 @@ def get_gender_indicators(country: str, category: str | None = None) -> str:
     Returns:
         Gender indicators with male/female comparisons
     """
-    country_code = _get_country_code(country)
+    country_code = get_iso3_code(country)
 
     # Filter by category if specified
     if category:
@@ -344,7 +308,7 @@ def compare_gender_gaps(country: str) -> str:
     Returns:
         Gender gap analysis showing male-female differences
     """
-    country_code = _get_country_code(country)
+    country_code = get_iso3_code(country)
 
     # Paired indicators for comparison
     comparisons = [
@@ -465,7 +429,7 @@ def get_gender_time_series(
     Returns:
         Time series data by year
     """
-    country_code = _get_country_code(country)
+    country_code = get_iso3_code(country)
 
     # Normalize indicator name
     indicator_key = indicator.lower().replace(" ", "_").replace("-", "_")

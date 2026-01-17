@@ -9,7 +9,7 @@ API Documentation: https://power.larc.nasa.gov/docs/
 
 from strands import tool
 
-from ._geo import format_location, geocode_or_parse
+from ._geo import format_location, geocode_or_parse, validate_coordinates
 from ._http import APIError, fetch_json, format_error
 
 # NASA POWER API base URL
@@ -82,7 +82,11 @@ def _fetch_power_data(
 
     Raises:
         APIError: On API errors
+        CoordinateValidationError: If coordinates are out of range
     """
+    # Validate coordinates before API call
+    validate_coordinates(lat, lon, context="for NASA POWER query")
+
     url = f"{NASA_POWER_BASE}/{temporal}/point"
     params = {
         "parameters": ",".join(parameters),

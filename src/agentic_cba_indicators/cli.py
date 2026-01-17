@@ -32,6 +32,11 @@ from agentic_cba_indicators.config import (
 )
 from agentic_cba_indicators.prompts import get_system_prompt
 from agentic_cba_indicators.tools import FULL_TOOLS, REDUCED_TOOLS
+from agentic_cba_indicators.tools._help import (
+    describe_tool,
+    list_tools,
+    set_active_tools,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -72,12 +77,19 @@ def create_agent_from_config(
     # Select tool set
     tools = FULL_TOOLS if agent_config.tool_set == "full" else REDUCED_TOOLS
 
-    # Create agent
+    # Register active tools for internal help system
+    set_active_tools(tools)
+
+    # Append internal help tools (always enabled, agent-only)
+    # These are not counted in user-facing tool count
+    tools_with_help = [*tools, list_tools, describe_tool]
+
+    # Create agent with help tools included
     agent = Agent(
         model=model,
         system_prompt=get_system_prompt(),
         conversation_manager=conversation_manager,
-        tools=tools,
+        tools=tools_with_help,
     )
 
     return agent, provider_config, agent_config
@@ -193,39 +205,42 @@ def print_help() -> None:
 
 def main() -> None:
     """Main entry point for the CLI chatbot."""
+    import argparse
     import sys
 
-    # Parse command line arguments
-    config_path = None
-    provider_override = None
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+        prog="agentic-cba",
+        description="CBA Indicators & Sustainable Agriculture Data Assistant",
+        epilog=(
+            "Examples:\n"
+            "  agentic-cba                          # Use default config (Ollama)\n"
+            "  agentic-cba --provider=anthropic     # Use Anthropic Claude\n"
+            "  agentic-cba --provider=openai        # Use OpenAI GPT\n"
+            "  agentic-cba --provider=bedrock       # Use AWS Bedrock\n"
+            "  agentic-cba --provider=gemini        # Use Google Gemini\n"
+            "  agentic-cba --config=my_config.yaml  # Use custom config file\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
 
-    for arg in sys.argv[1:]:
-        if arg.startswith("--config="):
-            config_path = arg.split("=")[1]
-        elif arg.startswith("--provider="):
-            provider_override = arg.split("=")[1]
-        elif arg in ["-h", "--help"]:
-            print("Usage: agentic-cba [OPTIONS]")
-            print("\nOptions:")
-            print("  --config=PATH       Path to providers.yaml config file")
-            print(
-                "  --provider=NAME     Override active provider (ollama, anthropic, openai, bedrock, gemini)"
-            )
-            print("\nExamples:")
-            print(
-                "  agentic-cba                          # Use default config (Ollama)"
-            )
-            print("  agentic-cba --provider=anthropic     # Use Anthropic Claude")
-            print("  agentic-cba --provider=openai        # Use OpenAI GPT")
-            print("  agentic-cba --provider=bedrock       # Use AWS Bedrock")
-            print("  agentic-cba --provider=gemini        # Use Google Gemini")
-            print("  agentic-cba --config=my_config.yaml  # Use custom config file")
-            print("\nConfiguration:")
-            print(
-                "  Create a providers.yaml in your config directory or pass --config."
-            )
-            print("  Environment variables are supported: ${ANTHROPIC_API_KEY}")
-            sys.exit(0)
+    parser.add_argument(
+        "--config",
+        metavar="PATH",
+        help="Path to providers.yaml config file",
+    )
+
+    parser.add_argument(
+        "--provider",
+        metavar="NAME",
+        choices=["ollama", "anthropic", "openai", "bedrock", "gemini"],
+        help="Override active provider (ollama, anthropic, openai, bedrock, gemini)",
+    )
+
+    args = parser.parse_args()
+
+    config_path = args.config
+    provider_override = args.provider
 
     try:
         agent, provider_config, agent_config = create_agent_from_config(

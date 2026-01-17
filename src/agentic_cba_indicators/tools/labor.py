@@ -13,6 +13,7 @@ from typing import Any
 from strands import tool
 
 from ._http import APIError, fetch_json, format_error
+from ._mappings import get_iso3_code
 
 # ILO API base URL
 ILO_API = "https://rplumber.ilo.org"
@@ -101,48 +102,6 @@ LABOR_INDICATORS = {
     },
 }
 
-# ISO country codes for common countries
-COUNTRY_CODES = {
-    "brazil": "BRA",
-    "chad": "TCD",
-    "china": "CHN",
-    "ethiopia": "ETH",
-    "france": "FRA",
-    "germany": "DEU",
-    "ghana": "GHA",
-    "india": "IND",
-    "indonesia": "IDN",
-    "japan": "JPN",
-    "kenya": "KEN",
-    "mexico": "MEX",
-    "nigeria": "NGA",
-    "south africa": "ZAF",
-    "spain": "ESP",
-    "tanzania": "TZA",
-    "uganda": "UGA",
-    "united kingdom": "GBR",
-    "uk": "GBR",
-    "usa": "USA",
-    "united states": "USA",
-    "vietnam": "VNM",
-}
-
-
-def _get_country_code(country: str) -> str:
-    """Convert country name to ISO 3-letter code."""
-    normalized = country.lower().strip()
-
-    # Check our mapping
-    if normalized in COUNTRY_CODES:
-        return COUNTRY_CODES[normalized]
-
-    # If already 3-letter code, return uppercase
-    if len(country) == 3 and country.isalpha():
-        return country.upper()
-
-    # Return as-is (API might accept it)
-    return country.upper()[:3]
-
 
 def _fetch_indicator(
     indicator_id: str,
@@ -161,7 +120,7 @@ def _fetch_indicator(
     }
 
     if country:
-        params["ref_area"] = _get_country_code(country)
+        params["ref_area"] = get_iso3_code(country)
     if sex:
         sex_code = {"male": "SEX_M", "female": "SEX_F", "total": "SEX_T"}.get(
             sex.lower(), "SEX_T"
@@ -196,7 +155,7 @@ def get_labor_indicators(country: str, indicators: str | None = None) -> str:
     Returns:
         Labor market statistics with most recent available data
     """
-    country_code = _get_country_code(country)
+    country_code = get_iso3_code(country)
 
     # Determine which indicators to fetch
     if indicators:
@@ -311,7 +270,7 @@ def get_employment_by_gender(country: str, year: int | None = None) -> str:
     Returns:
         Gender comparison of employment statistics
     """
-    country_code = _get_country_code(country)
+    country_code = get_iso3_code(country)
 
     # Indicators to compare by gender
     gender_indicators = [
@@ -436,7 +395,7 @@ def get_labor_time_series(
     Returns:
         Time series data with values by year
     """
-    country_code = _get_country_code(country)
+    country_code = get_iso3_code(country)
 
     # Normalize indicator name
     indicator_key = indicator.lower().replace(" ", "_").replace("-", "_")

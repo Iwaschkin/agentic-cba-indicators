@@ -5,12 +5,15 @@ Provides consistent coordinate lookup from city/place names
 using the Open-Meteo geocoding API (free, no API key required).
 """
 
+import os
+from collections import OrderedDict
 from typing import TypedDict
 
-import httpx
+from ._http import APIError, fetch_json
 
-# Simple in-memory cache to avoid repeated geocoding requests
-_geocode_cache: dict[str, dict | None] = {}
+# Simple bounded in-memory cache to avoid repeated geocoding requests
+MAX_CACHE_SIZE = int(os.environ.get("AGENTIC_CBA_GEO_CACHE_SIZE", "256"))
+_geocode_cache: OrderedDict[str, dict | None] = OrderedDict()
 
 
 class GeoLocation(TypedDict):
@@ -22,6 +25,52 @@ class GeoLocation(TypedDict):
     longitude: float
     admin1: str | None  # State/province
     timezone: str | None
+
+
+class CoordinateValidationError(ValueError):
+    """Exception raised for invalid coordinate values."""
+
+    pass
+
+
+def validate_coordinates(
+    latitude: float, longitude: float, context: str = ""
+) -> tuple[float, float]:
+    """
+    Validate latitude and longitude values are within valid ranges.
+
+    Args:
+        latitude: Latitude value to validate (-90 to +90)
+        longitude: Longitude value to validate (-180 to +180)
+        context: Optional context for error messages (e.g., "for NASA POWER query")
+
+    Returns:
+        Tuple of (latitude, longitude) if valid
+
+    Raises:
+        CoordinateValidationError: If coordinates are out of range
+    """
+    ctx = f" {context}" if context else ""
+
+    if not isinstance(latitude, (int, float)):
+        raise CoordinateValidationError(
+            f"Latitude must be a number{ctx}, got {type(latitude).__name__}"
+        )
+    if not isinstance(longitude, (int, float)):
+        raise CoordinateValidationError(
+            f"Longitude must be a number{ctx}, got {type(longitude).__name__}"
+        )
+
+    if latitude < -90 or latitude > 90:
+        raise CoordinateValidationError(
+            f"Latitude {latitude} is out of range{ctx}. Must be between -90 and +90."
+        )
+    if longitude < -180 or longitude > 180:
+        raise CoordinateValidationError(
+            f"Longitude {longitude} is out of range{ctx}. Must be between -180 and +180."
+        )
+
+    return (float(latitude), float(longitude))
 
 
 def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
@@ -42,6 +91,7 @@ def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
     # Check cache
     if use_cache and cache_key in _geocode_cache:
         cached = _geocode_cache[cache_key]
+        _geocode_cache.move_to_end(cache_key)
         if cached is None:
             return None
         # Return cached result as GeoLocation
@@ -55,40 +105,39 @@ def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
         )
 
     try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.get(
-                "https://geocoding-api.open-meteo.com/v1/search",
-                params={"name": city, "count": 1, "language": "en", "format": "json"},
-            )
+        data = fetch_json(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={"name": city, "count": 1, "language": "en", "format": "json"},
+        )
 
-            if response.status_code != 200:
-                _geocode_cache[cache_key] = None
-                return None
+        if not isinstance(data, dict) or "results" not in data or not data["results"]:
+            _geocode_cache[cache_key] = None
+            return None
 
-            data = response.json()
+        result = data["results"][0]
+        location: GeoLocation = {
+            "name": result.get("name", city),
+            "country": result.get("country", "Unknown"),
+            "latitude": result.get("latitude"),
+            "longitude": result.get("longitude"),
+            "admin1": result.get("admin1"),
+            "timezone": result.get("timezone"),
+        }
 
-            if "results" not in data or len(data["results"]) == 0:
-                _geocode_cache[cache_key] = None
-                return None
+        # Cache the result
+        if use_cache:
+            _geocode_cache[cache_key] = dict(location)
+            _geocode_cache.move_to_end(cache_key)
+            if len(_geocode_cache) > MAX_CACHE_SIZE:
+                _geocode_cache.popitem(last=False)
 
-            result = data["results"][0]
-            location: GeoLocation = {
-                "name": result.get("name", city),
-                "country": result.get("country", "Unknown"),
-                "latitude": result.get("latitude"),
-                "longitude": result.get("longitude"),
-                "admin1": result.get("admin1"),
-                "timezone": result.get("timezone"),
-            }
+        return location
 
-            # Cache the result
-            if use_cache:
-                _geocode_cache[cache_key] = dict(location)
-
-            return location
-
-    except Exception:
+    except APIError:
         _geocode_cache[cache_key] = None
+        _geocode_cache.move_to_end(cache_key)
+        if len(_geocode_cache) > MAX_CACHE_SIZE:
+            _geocode_cache.popitem(last=False)
         return None
 
 
@@ -147,4 +196,4 @@ def format_location(lat: float, lon: float, precision: int = 4) -> str:
 def clear_cache() -> None:
     """Clear the geocoding cache."""
     global _geocode_cache
-    _geocode_cache = {}
+    _geocode_cache = OrderedDict()

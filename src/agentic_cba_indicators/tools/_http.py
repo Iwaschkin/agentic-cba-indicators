@@ -5,16 +5,64 @@ Provides consistent error handling, retry logic, and rate limiting
 across all external data source integrations.
 """
 
+import json
+import os
+import random
+import re
 import time
 from typing import Any
 
 import httpx
 
-# Default configuration
-DEFAULT_TIMEOUT = 30.0
-DEFAULT_RETRIES = 3
-DEFAULT_BACKOFF_BASE = 1.0
+from agentic_cba_indicators.logging_config import get_logger
+
+# Module logger
+logger = get_logger(__name__)
+
+# Default configuration (configurable via environment variables)
+DEFAULT_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "30.0"))
+DEFAULT_RETRIES = int(os.environ.get("HTTP_RETRIES", "3"))
+DEFAULT_BACKOFF_BASE = float(os.environ.get("HTTP_BACKOFF_BASE", "1.0"))
+DEFAULT_BACKOFF_MAX = float(os.environ.get("HTTP_BACKOFF_MAX", "30.0"))
 DEFAULT_USER_AGENT = "StrandsCLI/1.0 (CBA-ME-Indicators)"
+
+# Patterns for sensitive data sanitization
+_SENSITIVE_PATTERNS = [
+    # URL query parameters with sensitive names
+    (
+        re.compile(
+            r"([?&])(api_key|apikey|key|token|secret|password|auth|credential|bearer)=[^&\s]*",
+            re.IGNORECASE,
+        ),
+        r"\1\2=[REDACTED]",
+    ),
+    # Authorization headers in error messages
+    (
+        re.compile(r"(Authorization:\s*)(Bearer\s+)?[^\s]+", re.IGNORECASE),
+        r"\1[REDACTED]",
+    ),
+    # Generic API key patterns (32+ char hex/alphanumeric)
+    (re.compile(r"\b[a-fA-F0-9]{32,}\b"), "[REDACTED_KEY]"),
+]
+
+
+def sanitize_error(message: str) -> str:
+    """
+    Remove sensitive information from error messages.
+
+    Sanitizes API keys, tokens, passwords, and other credentials that may
+    appear in URLs, headers, or error text.
+
+    Args:
+        message: The error message to sanitize
+
+    Returns:
+        Sanitized error message with sensitive data replaced by [REDACTED]
+    """
+    result = message
+    for pattern, replacement in _SENSITIVE_PATTERNS:
+        result = pattern.sub(replacement, result)
+    return result
 
 
 class APIError(Exception):
@@ -83,7 +131,16 @@ def fetch_json(
 
                 # Success
                 if response.status_code == 200:
-                    return response.json()
+                    try:
+                        return response.json()
+                    except json.JSONDecodeError as e:
+                        # Don't include raw response body in error (may contain sensitive data)
+                        # Sanitize URL to remove any query parameters with sensitive names
+                        sanitized_url = sanitize_error(url)
+                        raise APIError(
+                            f"Invalid JSON response from {sanitized_url}: {e.msg} at line {e.lineno}",
+                            status_code=200,
+                        ) from e
 
                 # Rate limited - retry with backoff
                 if response.status_code == 429:
@@ -91,9 +148,17 @@ def fetch_json(
                         # Check for Retry-After header
                         retry_after = response.headers.get("Retry-After")
                         if retry_after:
-                            delay = float(retry_after)
+                            delay = min(float(retry_after), DEFAULT_BACKOFF_MAX)
                         else:
-                            delay = backoff_base * (2**attempt)
+                            base_delay = backoff_base * (2**attempt)
+                            jitter = random.uniform(0, backoff_base)
+                            delay = min(base_delay + jitter, DEFAULT_BACKOFF_MAX)
+                        logger.debug(
+                            "Rate limited (429), retrying in %.1fs (attempt %d/%d)",
+                            delay,
+                            attempt + 1,
+                            retries,
+                        )
                         time.sleep(delay)
                         continue
                     raise APIError(
@@ -103,7 +168,16 @@ def fetch_json(
                 # Server error - retry
                 if response.status_code >= 500:
                     if attempt < retries:
-                        delay = backoff_base * (2**attempt)
+                        base_delay = backoff_base * (2**attempt)
+                        jitter = random.uniform(0, backoff_base)
+                        delay = min(base_delay + jitter, DEFAULT_BACKOFF_MAX)
+                        logger.debug(
+                            "Server error (%d), retrying in %.1fs (attempt %d/%d)",
+                            response.status_code,
+                            delay,
+                            attempt + 1,
+                            retries,
+                        )
                         time.sleep(delay)
                         continue
                     raise APIError(
@@ -120,7 +194,15 @@ def fetch_json(
             except httpx.TimeoutException as e:
                 last_error = e
                 if attempt < retries:
-                    delay = backoff_base * (2**attempt)
+                    base_delay = backoff_base * (2**attempt)
+                    jitter = random.uniform(0, backoff_base)
+                    delay = min(base_delay + jitter, DEFAULT_BACKOFF_MAX)
+                    logger.debug(
+                        "Request timeout, retrying in %.1fs (attempt %d/%d)",
+                        delay,
+                        attempt + 1,
+                        retries,
+                    )
                     time.sleep(delay)
                     continue
                 raise APIError(f"Request timeout after {retries} retries") from e
@@ -128,7 +210,16 @@ def fetch_json(
             except httpx.RequestError as e:
                 last_error = e
                 if attempt < retries:
-                    delay = backoff_base * (2**attempt)
+                    base_delay = backoff_base * (2**attempt)
+                    jitter = random.uniform(0, backoff_base)
+                    delay = min(base_delay + jitter, DEFAULT_BACKOFF_MAX)
+                    logger.debug(
+                        "Request error (%s), retrying in %.1fs (attempt %d/%d)",
+                        type(e).__name__,
+                        delay,
+                        attempt + 1,
+                        retries,
+                    )
                     time.sleep(delay)
                     continue
                 raise APIError(f"Request failed: {e!s}") from e
@@ -145,18 +236,21 @@ def format_error(error: Exception, context: str = "") -> str:
     """
     Format an error for user-friendly display.
 
+    Automatically sanitizes sensitive information like API keys from
+    the error message to prevent credential leakage.
+
     Args:
         error: The exception to format
         context: Additional context about what operation failed
 
     Returns:
-        Formatted error message string
+        Formatted and sanitized error message string
     """
     prefix = f"Error {context}: " if context else "Error: "
 
     if isinstance(error, APIError):
         if error.status_code:
-            return f"{prefix}HTTP {error.status_code} - {error!s}"
-        return f"{prefix}{error!s}"
+            return f"{prefix}HTTP {error.status_code} - {sanitize_error(str(error))}"
+        return f"{prefix}{sanitize_error(str(error))}"
 
-    return f"{prefix}{error!s}"
+    return f"{prefix}{sanitize_error(str(error))}"

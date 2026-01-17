@@ -1,46 +1,62 @@
 """Weather tools using Open-Meteo API (free, no API key required)."""
 
-import httpx
+from typing import Final
+
 from strands import tool
 
+from ._geo import geocode_city
+from ._http import APIError, fetch_json, format_error
 
-# Geocoding to get coordinates from city name
-async def _geocode_city(city: str) -> dict | None:
-    """Get latitude and longitude for a city name."""
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1, "language": "en", "format": "json"},
-        )
-        data = response.json()
-        if "results" in data and len(data["results"]) > 0:
-            result = data["results"][0]
-            return {
-                "name": result.get("name"),
-                "country": result.get("country"),
-                "latitude": result.get("latitude"),
-                "longitude": result.get("longitude"),
-            }
-        return None
+# WMO Weather Code descriptions (plain text, for current weather)
+# See: https://open-meteo.com/en/docs#weathervariables
+WEATHER_CODE_DESCRIPTIONS: Final[dict[int, str]] = {
+    0: "Clear sky",
+    1: "Mainly clear",
+    2: "Partly cloudy",
+    3: "Overcast",
+    45: "Foggy",
+    48: "Depositing rime fog",
+    51: "Light drizzle",
+    53: "Moderate drizzle",
+    55: "Dense drizzle",
+    61: "Slight rain",
+    63: "Moderate rain",
+    65: "Heavy rain",
+    71: "Slight snow",
+    73: "Moderate snow",
+    75: "Heavy snow",
+    80: "Slight rain showers",
+    81: "Moderate rain showers",
+    82: "Violent rain showers",
+    95: "Thunderstorm",
+    96: "Thunderstorm with slight hail",
+    99: "Thunderstorm with heavy hail",
+}
 
-
-def _geocode_city_sync(city: str) -> dict | None:
-    """Synchronous version of geocoding."""
-    with httpx.Client() as client:
-        response = client.get(
-            "https://geocoding-api.open-meteo.com/v1/search",
-            params={"name": city, "count": 1, "language": "en", "format": "json"},
-        )
-        data = response.json()
-        if "results" in data and len(data["results"]) > 0:
-            result = data["results"][0]
-            return {
-                "name": result.get("name"),
-                "country": result.get("country"),
-                "latitude": result.get("latitude"),
-                "longitude": result.get("longitude"),
-            }
-        return None
+# WMO Weather Code descriptions with emoji (for forecasts)
+WEATHER_CODE_EMOJI: Final[dict[int, str]] = {
+    0: "☀️ Clear",
+    1: "🌤️ Mainly clear",
+    2: "⛅ Partly cloudy",
+    3: "☁️ Overcast",
+    45: "🌫️ Foggy",
+    48: "🌫️ Rime fog",
+    51: "🌧️ Light drizzle",
+    53: "🌧️ Drizzle",
+    55: "🌧️ Dense drizzle",
+    61: "🌧️ Slight rain",
+    63: "🌧️ Rain",
+    65: "🌧️ Heavy rain",
+    71: "🌨️ Light snow",
+    73: "🌨️ Snow",
+    75: "🌨️ Heavy snow",
+    80: "🌦️ Rain showers",
+    81: "🌦️ Moderate showers",
+    82: "⛈️ Heavy showers",
+    95: "⛈️ Thunderstorm",
+    96: "⛈️ T-storm + hail",
+    99: "⛈️ Severe t-storm",
+}
 
 
 @tool
@@ -54,12 +70,12 @@ def get_current_weather(city: str) -> str:
     Returns:
         Current weather information including temperature, humidity, wind, and conditions
     """
-    location = _geocode_city_sync(city)
+    location = geocode_city(city)
     if not location:
         return f"Could not find location: {city}"
 
-    with httpx.Client() as client:
-        response = client.get(
+    try:
+        data = fetch_json(
             "https://api.open-meteo.com/v1/forecast",
             params={
                 "latitude": location["latitude"],
@@ -68,37 +84,18 @@ def get_current_weather(city: str) -> str:
                 "timezone": "auto",
             },
         )
-        data = response.json()
+    except APIError as e:
+        return format_error(e, "fetching current weather")
+
+    if not isinstance(data, dict):
+        return "Error fetching current weather: unexpected response format"
 
     current = data.get("current", {})
     units = data.get("current_units", {})
 
-    # Weather code descriptions
-    weather_codes = {
-        0: "Clear sky",
-        1: "Mainly clear",
-        2: "Partly cloudy",
-        3: "Overcast",
-        45: "Foggy",
-        48: "Depositing rime fog",
-        51: "Light drizzle",
-        53: "Moderate drizzle",
-        55: "Dense drizzle",
-        61: "Slight rain",
-        63: "Moderate rain",
-        65: "Heavy rain",
-        71: "Slight snow",
-        73: "Moderate snow",
-        75: "Heavy snow",
-        80: "Slight rain showers",
-        81: "Moderate rain showers",
-        82: "Violent rain showers",
-        95: "Thunderstorm",
-        96: "Thunderstorm with slight hail",
-        99: "Thunderstorm with heavy hail",
-    }
-
-    weather_desc = weather_codes.get(current.get("weather_code", 0), "Unknown")
+    weather_desc = WEATHER_CODE_DESCRIPTIONS.get(
+        current.get("weather_code", 0), "Unknown"
+    )
 
     return f"""Current Weather for {location["name"]}, {location["country"]}:
 - Conditions: {weather_desc}
@@ -121,14 +118,14 @@ def get_weather_forecast(city: str, days: int = 7) -> str:
     Returns:
         Weather forecast with daily high/low temperatures and conditions
     """
-    location = _geocode_city_sync(city)
+    location = geocode_city(city)
     if not location:
         return f"Could not find location: {city}"
 
     days = min(max(1, days), 16)  # Clamp to valid range
 
-    with httpx.Client() as client:
-        response = client.get(
+    try:
+        data = fetch_json(
             "https://api.open-meteo.com/v1/forecast",
             params={
                 "latitude": location["latitude"],
@@ -138,34 +135,14 @@ def get_weather_forecast(city: str, days: int = 7) -> str:
                 "forecast_days": days,
             },
         )
-        data = response.json()
+    except APIError as e:
+        return format_error(e, "fetching forecast")
+
+    if not isinstance(data, dict):
+        return "Error fetching forecast: unexpected response format"
 
     daily = data.get("daily", {})
     _ = data.get("daily_units", {})  # Available but not currently used
-
-    weather_codes = {
-        0: "☀️ Clear",
-        1: "🌤️ Mainly clear",
-        2: "⛅ Partly cloudy",
-        3: "☁️ Overcast",
-        45: "🌫️ Foggy",
-        48: "🌫️ Rime fog",
-        51: "🌧️ Light drizzle",
-        53: "🌧️ Drizzle",
-        55: "🌧️ Dense drizzle",
-        61: "🌧️ Slight rain",
-        63: "🌧️ Rain",
-        65: "🌧️ Heavy rain",
-        71: "🌨️ Light snow",
-        73: "🌨️ Snow",
-        75: "🌨️ Heavy snow",
-        80: "🌦️ Rain showers",
-        81: "🌦️ Moderate showers",
-        82: "⛈️ Heavy showers",
-        95: "⛈️ Thunderstorm",
-        96: "⛈️ T-storm + hail",
-        99: "⛈️ Severe t-storm",
-    }
 
     forecast_lines = [
         f"Weather Forecast for {location['name']}, {location['country']}:\n"
@@ -179,7 +156,7 @@ def get_weather_forecast(city: str, days: int = 7) -> str:
     wind = daily.get("wind_speed_10m_max", [])
 
     for i in range(len(dates)):
-        weather_desc = weather_codes.get(weather[i], "Unknown")
+        weather_desc = WEATHER_CODE_EMOJI.get(weather[i], "Unknown")
         forecast_lines.append(
             f"📅 {dates[i]}: {weather_desc}\n"
             f"   High: {temps_max[i]}°C | Low: {temps_min[i]}°C | "

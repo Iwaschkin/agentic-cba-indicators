@@ -10,6 +10,7 @@ API Documentation: https://unstats.un.org/sdgs/UNSDGAPIV5/swagger/
 from strands import tool
 
 from ._http import APIError, fetch_json, format_error
+from ._mappings import COUNTRY_CODES_SDG, normalize_key
 
 # UN SDG API base URL
 SDG_BASE = "https://unstats.un.org/sdgs/UNSDGAPIV5/v1/sdg"
@@ -67,105 +68,11 @@ CBA_TO_SDG = {
     },
 }
 
-# Common country name to UN GeoArea code mapping
-# See: https://unstats.un.org/sdgs/UNSDGAPIV5/v1/sdg/GeoArea/List
-COUNTRY_CODES = {
-    "world": 1,
-    "global": 1,
-    "afghanistan": 4,
-    "albania": 8,
-    "algeria": 12,
-    "argentina": 32,
-    "australia": 36,
-    "austria": 40,
-    "bangladesh": 50,
-    "belgium": 56,
-    "brazil": 76,
-    "canada": 124,
-    "chile": 152,
-    "china": 156,
-    "colombia": 170,
-    "democratic republic of the congo": 180,
-    "drc": 180,
-    "congo": 178,
-    "denmark": 208,
-    "egypt": 818,
-    "ethiopia": 231,
-    "finland": 246,
-    "france": 250,
-    "germany": 276,
-    "ghana": 288,
-    "greece": 300,
-    "india": 356,
-    "indonesia": 360,
-    "iran": 364,
-    "iraq": 368,
-    "ireland": 372,
-    "israel": 376,
-    "italy": 380,
-    "japan": 392,
-    "jordan": 400,
-    "kenya": 404,
-    "south korea": 410,
-    "korea": 410,
-    "malaysia": 458,
-    "mexico": 484,
-    "morocco": 504,
-    "mozambique": 508,
-    "myanmar": 104,
-    "nepal": 524,
-    "netherlands": 528,
-    "new zealand": 554,
-    "nigeria": 566,
-    "norway": 578,
-    "pakistan": 586,
-    "peru": 604,
-    "philippines": 608,
-    "poland": 616,
-    "portugal": 620,
-    "russia": 643,
-    "russian federation": 643,
-    "saudi arabia": 682,
-    "senegal": 686,
-    "singapore": 702,
-    "south africa": 710,
-    "spain": 724,
-    "sri lanka": 144,
-    "sweden": 752,
-    "switzerland": 756,
-    "tanzania": 834,
-    "thailand": 764,
-    "turkey": 792,
-    "uganda": 800,
-    "ukraine": 804,
-    "united arab emirates": 784,
-    "uae": 784,
-    "united kingdom": 826,
-    "uk": 826,
-    "united states": 840,
-    "usa": 840,
-    "us": 840,
-    "vietnam": 704,
-    "zambia": 894,
-    "zimbabwe": 716,
-    # African regions
-    "africa": 2,
-    "sub-saharan africa": 202,
-    "northern africa": 15,
-    "eastern africa": 14,
-    "western africa": 11,
-    # Other regions
-    "asia": 142,
-    "europe": 150,
-    "latin america": 419,
-    "oceania": 9,
-}
-
 
 def _get_geo_code(country: str) -> int | None:
     """Convert country name to UN GeoArea code."""
-    normalized = country.lower().strip()
-    return COUNTRY_CODES.get(normalized)
+    normalized = normalize_key(country)
+    return COUNTRY_CODES_SDG.get(normalized)
 
 
 def _fetch_goals() -> list[dict]:

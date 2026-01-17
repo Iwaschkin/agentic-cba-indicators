@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
 import chromadb
-import httpx
 import pandas as pd
 
 if TYPE_CHECKING:
@@ -48,9 +47,9 @@ class IngestionResult(TypedDict):
 
 # Add src to path for agentic_cba_indicators imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-import os
 
 from agentic_cba_indicators.paths import get_kb_path
+from agentic_cba_indicators.tools._embedding import get_embeddings_batch
 
 # =============================================================================
 # Configuration
@@ -63,20 +62,7 @@ MASTER_EXCEL = (
 )
 KB_PATH = get_kb_path()
 
-# Ollama settings (configurable via environment variables)
-# Supports both local Ollama and Ollama Cloud (https://ollama.com)
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")  # Optional, for Ollama Cloud
-EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 FUZZY_MATCH_THRESHOLD = 0.85  # 85% similarity required for name-to-ID matching
-
-
-def _get_ollama_headers() -> dict[str, str]:
-    """Get headers for Ollama API requests, including auth if API key is set."""
-    headers = {"Content-Type": "application/json"}
-    if OLLAMA_API_KEY:
-        headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
-    return headers
 
 
 # Use case definitions - add new projects here
@@ -203,7 +189,7 @@ class UseCaseOutcomeDoc:
 def extract_pdf_text(pdf_path: Path) -> str:
     """Extract text from PDF using pymupdf."""
     try:
-        import fitz  # pymupdf
+        import fitz  # type: ignore[import-not-found]  # pymupdf optional
     except ImportError:
         print("  ⚠ pymupdf not installed. Run: uv add pymupdf")
         return ""
@@ -401,43 +387,6 @@ def load_usecase_excel(
 
 
 # =============================================================================
-# Embedding
-# =============================================================================
-
-
-def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings for a batch of texts using Ollama (local or cloud)."""
-    MAX_CHARS = 6000
-    truncated_texts = [
-        text[:MAX_CHARS] + "..." if len(text) > MAX_CHARS else text for text in texts
-    ]
-
-    headers = _get_ollama_headers()
-    with httpx.Client(timeout=120.0) as client:
-        response = client.post(
-            f"{OLLAMA_HOST}/api/embed",
-            json={"model": EMBEDDING_MODEL, "input": truncated_texts},
-            headers=headers,
-        )
-        if response.status_code != 200:
-            # Fall back to individual embedding
-            embeddings = []
-            for text in truncated_texts:
-                try:
-                    single_resp = client.post(
-                        f"{OLLAMA_HOST}/api/embed",
-                        json={"model": EMBEDDING_MODEL, "input": text},
-                        headers=headers,
-                    )
-                    single_resp.raise_for_status()
-                    embeddings.append(single_resp.json()["embeddings"][0])
-                except Exception:
-                    embeddings.append([0.0] * 768)
-            return embeddings
-        return response.json()["embeddings"]
-
-
-# =============================================================================
 # ChromaDB Operations
 # =============================================================================
 
@@ -454,7 +403,8 @@ def upsert_usecase_docs(
     outcomes: list[UseCaseOutcomeDoc],
     verbose: bool = False,
     dry_run: bool = False,
-) -> int:
+    strict: bool = False,
+) -> tuple[int, list[str]]:
     """Upsert use case documents to ChromaDB."""
     collection = client.get_or_create_collection(name="usecases")
 
@@ -475,20 +425,40 @@ def upsert_usecase_docs(
                 print(f"    - {doc.doc_id}")
             if len(all_docs) > 3:
                 print(f"    ... and {len(all_docs) - 3} more")
-        return len(all_docs)
+        return len(all_docs), []
 
     print(f"  Embedding {len(documents)} documents...")
-    embeddings = get_embeddings_batch(documents)
+    embeddings = get_embeddings_batch(documents, strict=strict)
+
+    filtered_ids: list[str] = []
+    filtered_docs: list[str] = []
+    filtered_metas: list[dict] = []
+    filtered_embeddings: list[list[float]] = []
+    failed_ids: list[str] = []
+
+    for doc_id, doc, meta, embedding in zip(
+        ids, documents, metadatas, embeddings, strict=False
+    ):
+        if embedding is None:
+            failed_ids.append(doc_id)
+            continue
+        filtered_ids.append(doc_id)
+        filtered_docs.append(doc)
+        filtered_metas.append(meta)
+        filtered_embeddings.append(embedding)
+
+    if failed_ids:
+        print(f"  ⚠ Skipping {len(failed_ids)} docs due to embedding failures")
 
     print("  Upserting to 'usecases' collection...")
     collection.upsert(
-        ids=ids,
-        embeddings=embeddings,  # type: ignore[arg-type]
-        documents=documents,
-        metadatas=metadatas,  # type: ignore[arg-type]
+        ids=filtered_ids,
+        embeddings=filtered_embeddings,  # type: ignore[arg-type]
+        documents=filtered_docs,
+        metadatas=filtered_metas,  # type: ignore[arg-type]
     )
 
-    return len(all_docs)
+    return len(filtered_ids), failed_ids
 
 
 # =============================================================================
@@ -502,6 +472,7 @@ def ingest_usecase(
     client: ClientAPI,
     verbose: bool = False,
     dry_run: bool = False,
+    strict: bool = False,
 ) -> dict:
     """Ingest a single use case project."""
     slug = use_case_config["slug"]
@@ -511,6 +482,7 @@ def ingest_usecase(
         "outcomes": 0,
         "resolved_indicators": 0,
         "unresolved_indicators": 0,
+        "failed_docs": 0,
     }
 
     excel_path = USECASES_DIR / use_case_config["excel_file"]
@@ -559,7 +531,16 @@ def ingest_usecase(
         summary["unresolved_indicators"] += len(outcome.unresolved_names)
 
     # Upsert to ChromaDB
-    upsert_usecase_docs(client, overview, outcomes, verbose=verbose, dry_run=dry_run)
+    doc_count, failed_ids = upsert_usecase_docs(
+        client,
+        overview,
+        outcomes,
+        verbose=verbose,
+        dry_run=dry_run,
+        strict=strict,
+    )
+    _ = doc_count
+    summary["failed_docs"] = len(failed_ids)
     summary["outcomes"] = len(outcomes)
 
     return summary
@@ -569,6 +550,7 @@ def ingest(
     clear: bool = False,
     verbose: bool = False,
     dry_run: bool = False,
+    strict: bool = False,
 ) -> IngestionResult:
     """Main ingestion function for all use cases."""
     results: IngestionResult = {
@@ -581,8 +563,9 @@ def ingest(
     if not dry_run:
         print("Testing Ollama connection...")
         try:
-            test_emb = get_embeddings_batch(["test"])
-            print(f"  ✓ Ollama ready (embedding dim: {len(test_emb[0])})")
+            test_emb = get_embeddings_batch(["test"], strict=True)
+            emb_dim = len(test_emb[0]) if test_emb[0] is not None else 0
+            print(f"  ✓ Ollama ready (embedding dim: {emb_dim})")
         except Exception as e:
             results["errors"].append(f"Ollama connection failed: {e}")
             print(f"  ✗ Ollama error: {e}")
@@ -616,7 +599,12 @@ def ingest(
         print(f"{'=' * 50}")
 
         case_summary = ingest_usecase(
-            use_case_config, master_lookup, client, verbose=verbose, dry_run=dry_run
+            use_case_config,
+            master_lookup,
+            client,
+            verbose=verbose,
+            dry_run=dry_run,
+            strict=strict,
         )
 
         results["usecases_processed"] += 1  # type: ignore[operator]
@@ -629,6 +617,11 @@ def ingest(
         print(f"    Outcome docs: {case_summary['outcomes']}")
         print(f"    Resolved indicators: {case_summary['resolved_indicators']}")
         print(f"    Unresolved indicators: {case_summary['unresolved_indicators']}")
+
+        if case_summary.get("failed_docs", 0):
+            results["errors"].append(
+                f"Embedding failed for {case_summary['failed_docs']} documents in {case_summary['slug']}"
+            )
 
     return results
 
@@ -663,6 +656,11 @@ Examples:
         action="store_true",
         help="Enable verbose output",
     )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail ingestion on any embedding error",
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -678,6 +676,7 @@ Examples:
         clear=args.clear,
         verbose=args.verbose,
         dry_run=args.dry_run,
+        strict=args.strict,
     )
 
     # Print summary

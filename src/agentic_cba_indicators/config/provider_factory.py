@@ -8,6 +8,7 @@ provider (Ollama, Anthropic, OpenAI, Bedrock, or Gemini).
 from __future__ import annotations
 
 import importlib.resources
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -17,6 +18,33 @@ from typing import Any
 import yaml
 
 from agentic_cba_indicators.paths import get_user_config_path
+
+logger = logging.getLogger(__name__)
+
+# Whitelist of allowed environment variable names for config expansion.
+# This prevents potential injection attacks where an attacker with config
+# file access could exfiltrate arbitrary environment variables.
+ALLOWED_ENV_VARS = frozenset(
+    {
+        # API keys for supported providers
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "OLLAMA_API_KEY",
+        # AWS credentials (for Bedrock)
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_REGION",
+        "AWS_DEFAULT_REGION",
+        # Ollama configuration
+        "OLLAMA_HOST",
+        # Common proxy settings (for corporate environments)
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+    }
+)
 
 
 @dataclass
@@ -45,14 +73,28 @@ class AgentConfig:
 
 
 def _expand_env_vars(value: Any) -> Any:
-    """Recursively expand ${ENV_VAR} patterns in config values."""
+    """Recursively expand ${ENV_VAR} patterns in config values.
+
+    Only variables in ALLOWED_ENV_VARS whitelist will be expanded.
+    Attempts to expand non-whitelisted variables log a warning and expand to empty string.
+    """
     if isinstance(value, str):
         # Match ${VAR_NAME} pattern
         pattern = r"\$\{([^}]+)\}"
         matches = re.findall(pattern, value)
         for var_name in matches:
-            env_value = os.environ.get(var_name, "")
-            value = value.replace(f"${{{var_name}}}", env_value)
+            if var_name not in ALLOWED_ENV_VARS:
+                logger.warning(
+                    "Attempted to expand non-whitelisted environment variable '%s'. "
+                    "Only these variables are allowed: %s",
+                    var_name,
+                    ", ".join(sorted(ALLOWED_ENV_VARS)),
+                )
+                # Replace with empty string for security
+                value = value.replace(f"${{{var_name}}}", "")
+            else:
+                env_value = os.environ.get(var_name, "")
+                value = value.replace(f"${{{var_name}}}", env_value)
         return value
     elif isinstance(value, dict):
         return {k: _expand_env_vars(v) for k, v in value.items()}
@@ -67,8 +109,8 @@ def load_config(config_path: Path | str | None = None) -> dict[str, Any]:
 
     Resolution order:
     1. Explicit config_path argument
-    2. User config: ~/.config/strands-cli/providers.yaml (or platform equivalent)
-    3. Bundled default: strands_cli/config/providers.yaml
+    2. User config: ~/.config/agentic-cba-indicators/providers.yaml (or platform equivalent)
+    3. Bundled default: agentic_cba_indicators/config/providers.yaml
 
     Args:
         config_path: Path to config file. If None, searches user config then bundled.
@@ -88,12 +130,16 @@ def load_config(config_path: Path | str | None = None) -> dict[str, Any]:
         else:
             # Fall back to bundled config
             try:
-                files = importlib.resources.files("strands_cli.config")
+                files = importlib.resources.files("agentic_cba_indicators.config")
                 bundled = files / "providers.yaml"
                 # Read directly from package resources
                 content = bundled.read_text(encoding="utf-8")
                 config = yaml.safe_load(content)
-                return _expand_env_vars(config)
+                if not isinstance(config, dict):
+                    raise ValueError("Bundled config is empty or invalid")
+                config = _expand_env_vars(config)
+                _validate_config(config)
+                return config
             except Exception as e:
                 raise FileNotFoundError(
                     f"No config file found. Create one at: {user_config}"
@@ -102,8 +148,53 @@ def load_config(config_path: Path | str | None = None) -> dict[str, Any]:
     with Path(config_path).open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
+    if not isinstance(config, dict):
+        raise ValueError("Config file is empty or invalid YAML")
+
     # Expand environment variables
-    return _expand_env_vars(config)
+    config = _expand_env_vars(config)
+    _validate_config(config)
+    return config
+
+
+def _validate_config(config: dict[str, Any]) -> None:
+    """Validate configuration schema for required fields and types."""
+    if not isinstance(config, dict):
+        raise ValueError("Config must be a mapping")
+
+    active = config.get("active_provider")
+    providers = config.get("providers")
+
+    if not isinstance(active, str) or not active:
+        raise ValueError("Config must include 'active_provider' as a non-empty string")
+
+    if not isinstance(providers, dict) or not providers:
+        raise ValueError("Config must include 'providers' mapping")
+
+    if active not in providers:
+        raise ValueError(
+            f"Active provider '{active}' not found in providers: {list(providers.keys())}"
+        )
+
+    for name, provider_cfg in providers.items():
+        if not isinstance(provider_cfg, dict):
+            raise ValueError(f"Provider '{name}' configuration must be a mapping")
+        model_id = provider_cfg.get("model_id")
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError(f"Provider '{name}' must define a non-empty 'model_id'")
+
+    agent_cfg = config.get("agent", {})
+    if agent_cfg is not None:
+        if not isinstance(agent_cfg, dict):
+            raise ValueError("Agent config must be a mapping if provided")
+
+        tool_set = agent_cfg.get("tool_set", "reduced")
+        if tool_set not in {"reduced", "full"}:
+            raise ValueError("Agent 'tool_set' must be 'reduced' or 'full'")
+
+        conversation_window = agent_cfg.get("conversation_window", 5)
+        if not isinstance(conversation_window, int) or conversation_window <= 0:
+            raise ValueError("Agent 'conversation_window' must be a positive integer")
 
 
 def get_provider_config(config: dict[str, Any]) -> ProviderConfig:
