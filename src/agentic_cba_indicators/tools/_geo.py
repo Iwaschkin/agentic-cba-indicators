@@ -42,7 +42,17 @@ def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
     # Check cache
     if use_cache and cache_key in _geocode_cache:
         cached = _geocode_cache[cache_key]
-        return GeoLocation(**cached) if cached else None
+        if cached is None:
+            return None
+        # Return cached result as GeoLocation
+        return GeoLocation(
+            name=cached.get("name", ""),
+            country=cached.get("country", ""),
+            latitude=cached.get("latitude", 0.0),
+            longitude=cached.get("longitude", 0.0),
+            admin1=cached.get("admin1"),
+            timezone=cached.get("timezone"),
+        )
 
     try:
         with httpx.Client(timeout=10.0) as client:

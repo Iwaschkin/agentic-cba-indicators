@@ -1,4 +1,4 @@
-# Strands CLI Chatbot - AI Coding Instructions
+# Agentic CBA Indicators - AI Coding Instructions
 
 ## Project Overview
 
@@ -8,9 +8,10 @@ A CLI chatbot that queries weather, climate, socio-economic data, and **CBA ME I
 
 - **Language:** Python 3.11+
 - **Package Manager:** uv
+- **Package Name:** agentic-cba-indicators (src layout)
 - **AI Framework:** [strands-agents](https://strandsagents.com/) with multi-provider support
 - **AI Providers:** Ollama (default), Anthropic, OpenAI, AWS Bedrock, Google Gemini
-- **Vector Store:** ChromaDB (local persistence in `kb_data/`)
+- **Vector Store:** ChromaDB (XDG-style data directory)
 - **Embeddings:** Ollama `nomic-embed-text` model
 - **APIs:** Open-Meteo (weather/climate), World Bank API, REST Countries API
 
@@ -31,45 +32,63 @@ uv add 'strands-agents[gemini]'     # Google Gemini
 python scripts/ingest_excel.py
 
 # Run the chatbot
-python main.py                        # Uses config/providers.yaml (Ollama default)
-python main.py --provider=anthropic   # Use Anthropic (needs ANTHROPIC_API_KEY)
-python main.py --provider=openai      # Use OpenAI (needs OPENAI_API_KEY)
-python main.py --provider=bedrock     # Use AWS Bedrock (needs AWS credentials)
-python main.py --provider=gemini      # Use Google Gemini (needs GOOGLE_API_KEY)
+agentic-cba                        # Uses bundled config (Ollama default)
+agentic-cba --provider=anthropic   # Use Anthropic (needs ANTHROPIC_API_KEY)
+agentic-cba --provider=openai      # Use OpenAI (needs OPENAI_API_KEY)
+agentic-cba --provider=bedrock     # Use AWS Bedrock (needs AWS credentials)
+agentic-cba --provider=gemini      # Use Google Gemini (needs GOOGLE_API_KEY)
 ```
 
 ## Project Structure
 
 ```
-strands/
-├── main.py              # CLI entry point, agent configuration
-├── config/
-│   ├── providers.yaml   # Provider configuration (API keys, models)
-│   ├── provider_factory.py  # Model creation factory
-│   ├── __init__.py
-│   └── examples/        # Example configs per provider
-├── tools/               # Custom Strands tools
-│   ├── __init__.py      # Exports all tools
-│   ├── weather.py       # Open-Meteo current weather & forecast
-│   ├── climate.py       # Climate normals & historical data
-│   ├── socioeconomic.py # World Bank & REST Countries APIs
-│   └── knowledge_base.py# ChromaDB RAG for CBA indicators
-├── prompts/
-│   └── system_prompt_minimal.md  # System prompt
+agentic-cba-indicators/
+├── src/agentic_cba_indicators/  # Main package (src layout)
+│   ├── __init__.py              # Version, exports
+│   ├── py.typed                 # PEP 561 typing marker
+│   ├── cli.py                   # CLI entry point (agentic-cba command)
+│   ├── paths.py                 # XDG-style path resolution
+│   ├── config/
+│   │   ├── __init__.py          # Config exports
+│   │   ├── provider_factory.py  # Model creation factory
+│   │   ├── providers.yaml       # Bundled default config
+│   │   └── examples/            # Example configs per provider
+│   ├── prompts/
+│   │   ├── __init__.py          # Prompt loader (importlib.resources)
+│   │   └── *.md                 # System prompts
+│   └── tools/
+│       ├── __init__.py          # Tool exports, REDUCED_TOOLS, FULL_TOOLS
+│       ├── weather.py           # Open-Meteo current weather & forecast
+│       ├── climate.py           # Climate normals & historical data
+│       ├── socioeconomic.py     # World Bank & REST Countries APIs
+│       └── knowledge_base.py    # ChromaDB RAG for CBA indicators
 ├── scripts/
-│   └── ingest_excel.py  # Excel → ChromaDB ingestion
-├── cba_inputs/          # Source data files
-│   └── CBA ME Indicators List.xlsx
-├── kb_data/             # ChromaDB vector store (gitignored)
-├── pyproject.toml       # Dependencies managed by uv
-└── .python-version      # Python 3.11
+│   └── ingest_excel.py          # Excel → ChromaDB ingestion
+├── tests/                       # pytest test suite
+├── cba_inputs/                  # Source data files
+├── pyproject.toml               # Package configuration (hatchling build)
+└── .python-version              # Python 3.11
 ```
 
 ## Key Patterns
 
+### Path Resolution
+
+Uses `platformdirs` for XDG-style paths with environment variable overrides:
+
+```python
+from agentic_cba_indicators.paths import get_kb_path, get_data_dir, get_config_dir
+
+# Data: ~/.local/share/agentic-cba-indicators/ (Linux) or %LOCALAPPDATA%\agentic-cba\agentic-cba-indicators\ (Windows)
+# Config: ~/.config/agentic-cba-indicators/ (Linux) or %APPDATA%\agentic-cba-indicators\ (Windows)
+
+# Override with:
+# AGENTIC_CBA_DATA_DIR, AGENTIC_CBA_CONFIG_DIR
+```
+
 ### Creating Strands Tools
 
-Tools use the `@tool` decorator from strands. See [tools/weather.py](../tools/weather.py):
+Tools use the `@tool` decorator from strands. See [src/agentic_cba_indicators/tools/weather.py](../src/agentic_cba_indicators/tools/weather.py):
 
 ```python
 from strands import tool
@@ -78,10 +97,10 @@ from strands import tool
 def get_current_weather(city: str) -> str:
     """
     Get current weather conditions for a city.
-    
+
     Args:
         city: Name of the city (e.g., "London", "New York")
-    
+
     Returns:
         Current weather information
     """
@@ -90,7 +109,10 @@ def get_current_weather(city: str) -> str:
 
 ### Multi-Provider Configuration
 
-Provider settings are in `config/providers.yaml`:
+Configuration resolution order:
+1. Explicit `--config=path/to/file.yaml`
+2. User config: `~/.config/agentic-cba-indicators/providers.yaml`
+3. Bundled default: `agentic_cba_indicators/config/providers.yaml`
 
 ```yaml
 active_provider: ollama  # or anthropic, openai, bedrock, gemini
@@ -100,7 +122,7 @@ providers:
     host: "http://localhost:11434"
     model_id: "llama3.1:latest"
     temperature: 0.1
-    
+
   anthropic:
     api_key: ${ANTHROPIC_API_KEY}  # Environment variable
     model_id: "claude-sonnet-4-20250514"
@@ -113,10 +135,10 @@ agent:
 
 ### Agent Creation
 
-The agent is created from config via the factory:
+The agent is created from config via the CLI module:
 
 ```python
-from config import create_agent_from_config
+from agentic_cba_indicators.cli import create_agent_from_config
 
 agent, provider_config, agent_config = create_agent_from_config()
 # Or with override:
@@ -125,23 +147,25 @@ agent, _, _ = create_agent_from_config(provider_override="anthropic")
 
 ### Adding New Tools
 
-1. Create tool in `tools/` with `@tool` decorator
+1. Create tool in `src/agentic_cba_indicators/tools/` with `@tool` decorator
 2. Include clear docstring with Args/Returns (used by LLM)
-3. Export in `tools/__init__.py`
-4. Add to `REDUCED_TOOLS` or `FULL_TOOLS` in `main.py`
+3. Export in `src/agentic_cba_indicators/tools/__init__.py`
+4. Add to `REDUCED_TOOLS` or `FULL_TOOLS` in `tools/__init__.py`
 
 ### Knowledge Base (RAG) Pattern
 
-The knowledge base uses ChromaDB with Ollama embeddings. See [tools/knowledge_base.py](../tools/knowledge_base.py):
+The knowledge base uses ChromaDB with Ollama embeddings. See [src/agentic_cba_indicators/tools/knowledge_base.py](../src/agentic_cba_indicators/tools/knowledge_base.py):
 
 ```python
 from strands import tool
 import chromadb
+from agentic_cba_indicators.paths import get_kb_path
 
 @tool
 def search_indicators(query: str, n_results: int = 5) -> str:
     """Search CBA indicators by semantic similarity."""
-    collection = _get_collection("indicators")
+    client = chromadb.PersistentClient(path=str(get_kb_path()))
+    collection = client.get_collection("indicators")
     query_embedding = _get_embedding(query)  # via Ollama
     results = collection.query(query_embeddings=[query_embedding], n_results=n_results)
     # Format and return results...
@@ -155,7 +179,7 @@ Deterministic, repeatable ingestion following this workflow:
 3. **Build RAG documents** - Create stable document IDs (`indicator:{id}`, `methods_for_indicator:{id}`)
 4. **Embed** - Generate embeddings via Ollama (with truncation for large docs)
 5. **Upsert** - Safe incremental updates using stable IDs
-6. **Persist** - ChromaDB PersistentClient at `kb_data/`
+6. **Persist** - ChromaDB PersistentClient at XDG data directory
 
 ```bash
 # Standard ingestion (upsert)

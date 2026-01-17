@@ -178,4 +178,3 @@ This workbook is a **selection mapping**:
 - Optional extra indicators not present in the master library
 
 Ingest by parsing semicolon-separated lists, preserving outcome ids as strings, and emitting one outcome document per row (plus optional link docs).
-

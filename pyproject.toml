@@ -1,20 +1,187 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "strands"
-version = "0.1.0"
-description = "Add your description here"
+name = "agentic-cba-indicators"
+version = "0.2.0"
+description = "A CLI chatbot for weather, climate, socio-economic data, and CBA ME Indicators using Strands Agents SDK"
 readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+keywords = ["cli", "chatbot", "ai", "weather", "climate", "cba", "indicators", "agentic"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
 dependencies = [
     "chromadb>=1.4.1",
     "httpx>=0.28.1",
-    "mcp>=1.25.0",
-    "ollama>=0.6.1",
     "openpyxl>=3.1.5",
     "pandas>=2.3.3",
-    "pymupdf>=1.25.0",
-    "python-dotenv>=1.2.1",
+    "platformdirs>=4.0.0",
+    "pyright>=1.1.408",
     "pyyaml>=6.0.3",
-    "ruff>=0.14.13",
-    "strands-agents-tools>=0.2.19",
     "strands-agents[ollama]>=1.22.0",
+]
+
+[project.optional-dependencies]
+anthropic = ["strands-agents[anthropic]>=1.22.0"]
+openai = ["strands-agents[openai]>=1.22.0"]
+bedrock = ["strands-agents[bedrock]>=1.22.0"]
+gemini = ["strands-agents[gemini]>=1.22.0"]
+all-providers = [
+    "strands-agents[anthropic]>=1.22.0",
+    "strands-agents[openai]>=1.22.0",
+    "strands-agents[bedrock]>=1.22.0",
+    "strands-agents[gemini]>=1.22.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.14.0",
+    "mypy>=1.10.0",
+    "types-pyyaml>=6.0.0",
+    "pandas-stubs>=2.3.0",
+    "types-openpyxl>=3.1.5",
+]
+
+[project.scripts]
+agentic-cba = "agentic_cba_indicators.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/agentic-cba-indicators"
+Documentation = "https://github.com/yourusername/agentic-cba-indicators#readme"
+Repository = "https://github.com/yourusername/agentic-cba-indicators"
+Issues = "https://github.com/yourusername/agentic-cba-indicators/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_cba_indicators"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/README.md",
+    "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+    "-ra",
+    "-q",
+    "--strict-markers",
+]
+
+[tool.coverage.run]
+source_pkgs = ["agentic_cba_indicators"]
+branch = true
+parallel = true
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.mypy]
+python_version = "3.11"
+# Not using strict mode - incremental type checking
+warn_return_any = false
+warn_unused_configs = true
+exclude = ["^tests/"]
+
+# Ignore missing imports for third-party libraries without stubs
+ignore_missing_imports = true
+
+# Allow untyped decorators (e.g., @tool from strands)
+disallow_untyped_decorators = false
+
+# Allow untyped functions incrementally
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# Don't require explicit type annotations for generics
+disallow_any_generics = false
+
+[[tool.mypy.overrides]]
+module = ["strands.*", "chromadb.*", "fitz.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # Pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "RUF",    # Ruff-specific rules
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate (commented-out code)
+    "PERF",   # performance anti-patterns
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # function call in default argument
+    "ARG001", # unused function argument
+    "ARG005", # unused lambda argument (intentional in soil texture classifiers)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["agentic_cba_indicators"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ARG"]  # Allow unused arguments in test fixtures
+"scripts/*" = ["E402"]  # Allow module imports after configuration
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.black]
+line-length = 88
+target-version = ["py311", "py312", "py313"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[dependency-groups]
+dev = [
+    "black>=25.12.0",
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
 ]

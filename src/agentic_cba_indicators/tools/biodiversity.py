@@ -89,8 +89,8 @@ def _search_occurrences(
         params["country"] = country.upper()[:2]  # ISO 2-letter code
     if lat is not None and lon is not None:
         # Use decimal lat/lon with radius in km
-        params["decimalLatitude"] = f"{lat - radius_km/111},{lat + radius_km/111}"
-        params["decimalLongitude"] = f"{lon - radius_km/111},{lon + radius_km/111}"
+        params["decimalLatitude"] = f"{lat - radius_km / 111},{lat + radius_km / 111}"
+        params["decimalLongitude"] = f"{lon - radius_km / 111},{lon + radius_km / 111}"
     if year:
         params["year"] = year
 
@@ -157,10 +157,11 @@ def search_species(query: str, n_results: int = 10) -> str:
             output.append(f"Rank: {rank} | Status: {status}")
 
             # Taxonomy
-            taxonomy = []
-            for rank_name in TAXONOMIC_RANKS:
-                if rank_name in sp:
-                    taxonomy.append(f"{rank_name.title()}: {sp[rank_name]}")
+            taxonomy = [
+                f"{rank_name.title()}: {sp[rank_name]}"
+                for rank_name in TAXONOMIC_RANKS
+                if rank_name in sp
+            ]
             if taxonomy:
                 output.append("Taxonomy: " + " > ".join(taxonomy[:4]))
 

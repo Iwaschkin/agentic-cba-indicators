@@ -131,7 +131,7 @@ def fetch_json(
                     delay = backoff_base * (2**attempt)
                     time.sleep(delay)
                     continue
-                raise APIError(f"Request failed: {str(e)}") from e
+                raise APIError(f"Request failed: {e!s}") from e
 
         # Should not reach here, but just in case
         raise APIError(f"Unexpected error: {last_error}")
@@ -156,7 +156,7 @@ def format_error(error: Exception, context: str = "") -> str:
 
     if isinstance(error, APIError):
         if error.status_code:
-            return f"{prefix}HTTP {error.status_code} - {str(error)}"
-        return f"{prefix}{str(error)}"
+            return f"{prefix}HTTP {error.status_code} - {error!s}"
+        return f"{prefix}{error!s}"
 
-    return f"{prefix}{str(error)}"
+    return f"{prefix}{error!s}"

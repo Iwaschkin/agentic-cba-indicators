@@ -169,7 +169,7 @@ tools/
 def get_agricultural_climate(lat: float, lon: float, start_date: str, end_date: str) -> str:
     """Get agricultural climate parameters for a location."""
 
-@tool  
+@tool
 def get_solar_radiation(lat: float, lon: float, year: int) -> str:
     """Get solar radiation and related parameters for agricultural planning."""
 ```

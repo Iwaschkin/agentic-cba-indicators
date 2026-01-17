@@ -1,6 +1,8 @@
-"""Configuration module for the Strands CLI Chatbot."""
+"""Configuration module for agentic-cba-indicators."""
 
-from config.provider_factory import (
+from __future__ import annotations
+
+from agentic_cba_indicators.config.provider_factory import (
     AgentConfig,
     ProviderConfig,
     create_model,

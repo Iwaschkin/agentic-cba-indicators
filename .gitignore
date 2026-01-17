@@ -31,7 +31,18 @@ ENV/
 *.swp
 *.swo
 
-# Local data (don't commit)
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Linting/formatting
+.ruff_cache/
+.mypy_cache/
+
+# Local data (don't commit kb_data to repo, use STRANDS_DATA_DIR)
 kb_data/
 
 # Environment

@@ -27,7 +27,7 @@ import argparse
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import chromadb
 import httpx
@@ -37,6 +37,21 @@ if TYPE_CHECKING:
 
 import pandas as pd
 
+
+class IngestionSummary(TypedDict):
+    """Type definition for ingestion summary dictionary."""
+
+    indicators_count: int
+    methods_groups_count: int
+    total_methods: int
+    missing_methods_indicator_ids: list[int]
+    errors: list[str]
+
+
+# Add src to path for agentic_cba_indicators imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from agentic_cba_indicators.paths import get_kb_path
+
 # =============================================================================
 # Configuration
 # =============================================================================
@@ -44,10 +59,24 @@ import pandas as pd
 DEFAULT_EXCEL_FILE = (
     Path(__file__).parent.parent / "cba_inputs" / "CBA ME Indicators List.xlsx"
 )
-KB_PATH = Path(__file__).parent.parent / "kb_data"
-OLLAMA_HOST = "http://localhost:11434"
-EMBEDDING_MODEL = "nomic-embed-text"
+KB_PATH = get_kb_path()
+
+# Ollama settings (configurable via environment variables)
+# Supports both local Ollama and Ollama Cloud (https://ollama.com)
+import os
+
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")  # Optional, for Ollama Cloud
+EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 BATCH_SIZE = 5  # Embedding batch size (smaller for large documents)
+
+
+def _get_ollama_headers() -> dict[str, str]:
+    """Get headers for Ollama API requests, including auth if API key is set."""
+    headers = {"Content-Type": "application/json"}
+    if OLLAMA_API_KEY:
+        headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
+    return headers
 
 
 # =============================================================================
@@ -195,8 +224,7 @@ class IndicatorDoc:
                     f"{cid} {CRITERIA.get(cid, '')} {marking_label}".strip()
                 )
             parts.append(f"Criteria covered ({len(self.criteria)}):")
-            for cp in criteria_parts:
-                parts.append(f"  - {cp}")
+            parts.extend(f"  - {cp}" for cp in criteria_parts)
 
         return "\n".join(parts)
 
@@ -309,9 +337,9 @@ class MethodsGroupDoc:
     def to_metadata(self) -> dict:
         """Generate metadata for filtering."""
         # Collect unique accuracy/ease/cost levels across all methods
-        accuracies = list(set(m.accuracy for m in self.methods if m.accuracy))
-        eases = list(set(m.ease for m in self.methods if m.ease))
-        costs = list(set(m.cost for m in self.methods if m.cost))
+        accuracies = list({m.accuracy for m in self.methods if m.accuracy})
+        eases = list({m.ease for m in self.methods if m.ease})
+        costs = list({m.cost for m in self.methods if m.cost})
 
         return {
             "indicator_id": self.indicator_id,
@@ -509,17 +537,19 @@ def build_methods_group_docs(
 
 
 def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings for a batch of texts using Ollama."""
+    """Generate embeddings for a batch of texts using Ollama (local or cloud)."""
     # Truncate texts that are too long for the embedding model
     MAX_CHARS = 6000  # nomic-embed-text has ~8k token limit, be conservative
     truncated_texts = [
         text[:MAX_CHARS] + "..." if len(text) > MAX_CHARS else text for text in texts
     ]
 
+    headers = _get_ollama_headers()
     with httpx.Client(timeout=120.0) as client:
         response = client.post(
             f"{OLLAMA_HOST}/api/embed",
             json={"model": EMBEDDING_MODEL, "input": truncated_texts},
+            headers=headers,
         )
         if response.status_code != 200:
             # Fall back to individual embedding if batch fails
@@ -530,6 +560,7 @@ def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
                     single_resp = client.post(
                         f"{OLLAMA_HOST}/api/embed",
                         json={"model": EMBEDDING_MODEL, "input": text},
+                        headers=headers,
                     )
                     single_resp.raise_for_status()
                     embeddings.append(single_resp.json()["embeddings"][0])
@@ -564,14 +595,14 @@ def embed_documents(documents: list[str], verbose: bool = False) -> list[list[fl
 # =============================================================================
 
 
-def get_chroma_client() -> "ClientAPI":
+def get_chroma_client() -> ClientAPI:
     """Get or create persistent ChromaDB client."""
     KB_PATH.mkdir(parents=True, exist_ok=True)
     return chromadb.PersistentClient(path=str(KB_PATH))
 
 
 def upsert_indicators(
-    client: "ClientAPI",
+    client: ClientAPI,
     indicators: list[IndicatorDoc],
     verbose: bool = False,
     dry_run: bool = False,
@@ -605,7 +636,7 @@ def upsert_indicators(
 
 
 def upsert_methods(
-    client: "ClientAPI",
+    client: ClientAPI,
     methods_groups: list[MethodsGroupDoc],
     verbose: bool = False,
     dry_run: bool = False,
@@ -648,14 +679,14 @@ def ingest(
     clear: bool = False,
     verbose: bool = False,
     dry_run: bool = False,
-) -> dict:
+) -> IngestionSummary:
     """
     Main ingestion function.
 
     Returns:
         Summary dict with counts and any issues found.
     """
-    summary = {
+    summary: IngestionSummary = {
         "indicators_count": 0,
         "methods_groups_count": 0,
         "total_methods": 0,

@@ -14,7 +14,6 @@ import os
 from typing import Any
 
 import httpx
-
 from strands import tool
 
 # API configuration
@@ -301,7 +300,7 @@ def get_commodity_production(
             return f"No data found for commodity '{commodity}' in {year}."
         return f"API error: {e.response.status_code}"
     except Exception as e:
-        return f"Error fetching commodity data: {str(e)}"
+        return f"Error fetching commodity data: {e!s}"
 
 
 @tool
@@ -339,8 +338,7 @@ def get_commodity_trade(
 
         for yr in range(current_year - years + 1, current_year + 1):
             endpoint = (
-                f"/api/psd/commodity/{commodity_code}"
-                f"/country/{country_code}/year/{yr}"
+                f"/api/psd/commodity/{commodity_code}/country/{country_code}/year/{yr}"
             )
 
             try:
@@ -371,8 +369,9 @@ def get_commodity_trade(
 
         if trade_type in ["imports", "both"] and imports_data:
             output.append("📥 Imports (1000 MT):")
-            for yr in sorted(imports_data.keys()):
-                output.append(f"  {yr}: {imports_data[yr]:,.0f}")
+            output.extend(
+                f"  {yr}: {imports_data[yr]:,.0f}" for yr in sorted(imports_data.keys())
+            )
 
             # Calculate trend
             if len(imports_data) >= 2:
@@ -387,8 +386,9 @@ def get_commodity_trade(
 
         if trade_type in ["exports", "both"] and exports_data:
             output.append("📤 Exports (1000 MT):")
-            for yr in sorted(exports_data.keys()):
-                output.append(f"  {yr}: {exports_data[yr]:,.0f}")
+            output.extend(
+                f"  {yr}: {exports_data[yr]:,.0f}" for yr in sorted(exports_data.keys())
+            )
 
             # Calculate trend
             if len(exports_data) >= 2:
@@ -405,7 +405,7 @@ def get_commodity_trade(
     except ValueError as e:
         return str(e)
     except Exception as e:
-        return f"Error fetching trade data: {str(e)}"
+        return f"Error fetching trade data: {e!s}"
 
 
 @tool
@@ -496,7 +496,7 @@ def compare_commodity_producers(commodity: str, year: int | None = None) -> str:
     except ValueError as e:
         return str(e)
     except Exception as e:
-        return f"Error comparing producers: {str(e)}"
+        return f"Error comparing producers: {e!s}"
 
 
 @tool

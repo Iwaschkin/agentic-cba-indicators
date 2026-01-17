@@ -1,4 +1,4 @@
-# CBA Data Assistant
+# Agentic CBA Indicators
 
 A CLI chatbot for sustainable agriculture that queries weather, climate, socio-economic data, and **CBA ME Indicators** using the **Strands Agents SDK**.
 
@@ -33,18 +33,23 @@ source .venv/bin/activate  # Linux/Mac
 
 # Run with Ollama (default)
 ollama serve
-python main.py
+agentic-cba
 
 # Run with cloud providers
-python main.py --provider=anthropic   # Requires ANTHROPIC_API_KEY
-python main.py --provider=openai      # Requires OPENAI_API_KEY
-python main.py --provider=gemini      # Requires GOOGLE_API_KEY
-python main.py --provider=bedrock     # Requires AWS credentials
+agentic-cba --provider=anthropic   # Requires ANTHROPIC_API_KEY
+agentic-cba --provider=openai      # Requires OPENAI_API_KEY
+agentic-cba --provider=gemini      # Requires GOOGLE_API_KEY
+agentic-cba --provider=bedrock     # Requires AWS credentials
 ```
 
 ## Configuration
 
-Edit `config/providers.yaml` to set your preferences:
+The CLI looks for configuration in this order:
+1. Explicit `--config=path/to/file.yaml`
+2. User config: `~/.config/agentic-cba-indicators/providers.yaml` (Linux) or `%APPDATA%\agentic-cba-indicators\providers.yaml` (Windows)
+3. Bundled default config
+
+Example `providers.yaml`:
 
 ```yaml
 active_provider: ollama  # or anthropic, openai, bedrock, gemini
@@ -53,11 +58,11 @@ providers:
   ollama:
     host: "http://localhost:11434"
     model_id: "llama3.1:latest"
-    
+
   anthropic:
     api_key: ${ANTHROPIC_API_KEY}
     model_id: "claude-sonnet-4-20250514"
-    
+
   openai:
     api_key: ${OPENAI_API_KEY}
     model_id: "gpt-4o"
@@ -68,6 +73,58 @@ agent:
 ```
 
 Environment variables are supported using `${VAR_NAME}` syntax.
+
+## Data Storage
+
+Data is stored in platform-appropriate locations:
+- **Linux**: `~/.local/share/agentic-cba-indicators/`
+- **macOS**: `~/Library/Application Support/agentic-cba-indicators/`
+- **Windows**: `%LOCALAPPDATA%\agentic-cba\agentic-cba-indicators\`
+
+Override with environment variables:
+- `AGENTIC_CBA_DATA_DIR` - Knowledge base and data storage
+- `AGENTIC_CBA_CONFIG_DIR` - Configuration files
+
+## Embedding Configuration
+
+The knowledge base uses **Ollama for embeddings** (semantic search), which is separate from the LLM provider used for chat. This means you can use Claude/GPT for conversations while using Ollama (local or cloud) for embeddings.
+
+### Local Ollama (Default)
+
+```bash
+# Start Ollama locally
+ollama serve
+ollama pull nomic-embed-text
+
+# Run with any LLM provider - embeddings use local Ollama
+agentic-cba --provider=anthropic
+```
+
+### Ollama Cloud
+
+Use [Ollama Cloud](https://ollama.com) for embeddings without running Ollama locally:
+
+```bash
+# Set Ollama Cloud credentials
+export OLLAMA_HOST=https://ollama.com
+export OLLAMA_API_KEY=your_api_key_here
+
+# Now you can run fully cloud-based
+agentic-cba --provider=anthropic
+```
+
+### Embedding Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OLLAMA_HOST` | Ollama server URL | `http://localhost:11434` |
+| `OLLAMA_API_KEY` | Bearer token (for Ollama Cloud) | *(none)* |
+| `OLLAMA_EMBEDDING_MODEL` | Embedding model name | `nomic-embed-text` |
+
+> ⚠️ **Note**: If you change the embedding model or switch between local/cloud Ollama, rebuild the knowledge base:
+> ```bash
+> python scripts/ingest_excel.py --clear
+> ```
 
 ## Example Queries
 
@@ -81,15 +138,16 @@ You: Compare soil carbon indicators
 ## Project Structure
 
 ```
-strands/
-├── main.py              # CLI entry point
-├── config/
-│   ├── providers.yaml   # Provider configuration
-│   ├── provider_factory.py  # Model creation factory
-│   └── examples/        # Example configs per provider
-├── tools/               # Custom Strands tools
-├── prompts/             # System prompts
-└── kb_data/             # ChromaDB vector store
+agentic-cba-indicators/
+├── src/agentic_cba_indicators/  # Main package
+│   ├── cli.py                   # CLI entry point (agentic-cba command)
+│   ├── paths.py                 # XDG-style path resolution
+│   ├── config/                  # Provider configuration
+│   ├── prompts/                 # System prompts
+│   └── tools/                   # Custom Strands tools (52 total)
+├── scripts/                     # Data ingestion scripts
+├── tests/                       # pytest test suite
+└── pyproject.toml               # Package configuration
 ```
 
 ## Knowledge Base

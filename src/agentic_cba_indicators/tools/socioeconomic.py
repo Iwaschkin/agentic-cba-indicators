@@ -1,7 +1,6 @@
 """Socio-economic tools using World Bank and REST Countries APIs (free, no API key required)."""
 
 import httpx
-
 from strands import tool
 
 # Country code mapping (common names to ISO codes)
@@ -112,7 +111,7 @@ def get_country_indicators(country: str) -> str:
             if isinstance(data, list):
                 data = data[0]
         except Exception as e:
-            return f"Error fetching country data: {str(e)}"
+            return f"Error fetching country data: {e!s}"
 
     name = data.get("name", {}).get("common", country)
     official_name = data.get("name", {}).get("official", name)
@@ -141,9 +140,9 @@ def get_country_indicators(country: str) -> str:
 
     # Format population
     if population >= 1_000_000_000:
-        pop_str = f"{population/1_000_000_000:.2f} billion"
+        pop_str = f"{population / 1_000_000_000:.2f} billion"
     elif population >= 1_000_000:
-        pop_str = f"{population/1_000_000:.2f} million"
+        pop_str = f"{population / 1_000_000:.2f} million"
     else:
         pop_str = f"{population:,}"
 
@@ -241,7 +240,7 @@ def get_world_bank_data(country: str, indicator: str = "gdp") -> str:
 
             records = data[1]
         except Exception as e:
-            return f"Error fetching World Bank data: {str(e)}"
+            return f"Error fetching World Bank data: {e!s}"
 
     # Format the data
     country_name = (
@@ -259,18 +258,18 @@ def get_world_bank_data(country: str, indicator: str = "gdp") -> str:
             # Format based on indicator type
             if indicator_lower in ["gdp"]:
                 if value >= 1_000_000_000_000:
-                    formatted = f"${value/1_000_000_000_000:.2f}T"
+                    formatted = f"${value / 1_000_000_000_000:.2f}T"
                 elif value >= 1_000_000_000:
-                    formatted = f"${value/1_000_000_000:.2f}B"
+                    formatted = f"${value / 1_000_000_000:.2f}B"
                 else:
-                    formatted = f"${value/1_000_000:.2f}M"
+                    formatted = f"${value / 1_000_000:.2f}M"
             elif indicator_lower in ["gdp_per_capita"]:
                 formatted = f"${value:,.0f}"
             elif indicator_lower == "population":
                 if value >= 1_000_000_000:
-                    formatted = f"{value/1_000_000_000:.2f}B"
+                    formatted = f"{value / 1_000_000_000:.2f}B"
                 elif value >= 1_000_000:
-                    formatted = f"{value/1_000_000:.2f}M"
+                    formatted = f"{value / 1_000_000:.2f}M"
                 else:
                     formatted = f"{value:,.0f}"
             elif indicator_lower in ["gini"]:

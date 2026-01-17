@@ -489,7 +489,7 @@ def get_labor_time_series(
         # Calculate summary statistics
         if values:
             output.append("-" * 24)
-            output.append(f"{'Average':<10} {sum(values)/len(values):>12.1f}")
+            output.append(f"{'Average':<10} {sum(values) / len(values):>12.1f}")
             output.append(f"{'Min':<10} {min(values):>12.1f}")
             output.append(f"{'Max':<10} {max(values):>12.1f}")
 
@@ -499,7 +499,9 @@ def get_labor_time_series(
                 direction = (
                     "increased"
                     if change > 0
-                    else "decreased" if change < 0 else "unchanged"
+                    else "decreased"
+                    if change < 0
+                    else "unchanged"
                 )
                 output.append("")
                 output.append(

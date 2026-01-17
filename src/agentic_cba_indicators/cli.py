@@ -1,5 +1,5 @@
 """
-Strands CLI Chatbot - Weather, Climate, and Socio-Economic Data Assistant
+Agentic CBA Indicators Chatbot - Weather, Climate, and Socio-Economic Data Assistant
 
 A conversational AI assistant that can query:
 - Current weather and forecasts (via Open-Meteo)
@@ -12,12 +12,16 @@ A conversational AI assistant that can query:
 - Country information and World Bank indicators
 
 Supports multiple AI providers: Ollama, Anthropic, OpenAI, AWS Bedrock, Google Gemini.
-Configuration via config/providers.yaml.
 """
 
-from pathlib import Path
+from __future__ import annotations
 
-from config import (
+from typing import TYPE_CHECKING
+
+from strands import Agent
+from strands.agent.conversation_manager import SlidingWindowConversationManager
+
+from agentic_cba_indicators.config import (
     AgentConfig,
     ProviderConfig,
     create_model,
@@ -26,176 +30,11 @@ from config import (
     load_config,
     print_provider_info,
 )
-from strands import Agent
-from strands.agent.conversation_manager import SlidingWindowConversationManager
-from tools import (
-    compare_commodity_producers,
-    compare_gender_gaps,
-    compare_indicators,
-    export_indicator_selection,
-    find_feasible_methods,
-    find_indicators_by_class,
-    find_indicators_by_measurement_approach,
-    find_indicators_by_principle,
-    get_agricultural_climate,
-    get_biodiversity_summary,
-    get_climate_data,
-    get_commodity_production,
-    get_commodity_trade,
-    get_country_indicators,
-    get_crop_production,
-    get_current_weather,
-    get_employment_by_gender,
-    get_evapotranspiration,
-    get_forest_statistics,
-    get_gender_indicators,
-    get_gender_time_series,
-    get_historical_climate,
-    get_indicator_details,
-    get_labor_indicators,
-    get_labor_time_series,
-    get_land_use,
-    get_sdg_for_cba_principle,
-    get_sdg_progress,
-    get_sdg_series_data,
-    get_soil_carbon,
-    get_soil_properties,
-    get_soil_texture,
-    get_solar_radiation,
-    get_species_occurrences,
-    get_species_taxonomy,
-    get_usecase_details,
-    get_usecases_by_indicator,
-    get_weather_forecast,
-    get_world_bank_data,
-    list_available_classes,
-    list_fas_commodities,
-    list_indicators_by_component,
-    list_knowledge_base_stats,
-    search_commodity_data,
-    search_fao_indicators,
-    search_gender_indicators,
-    search_indicators,
-    search_labor_indicators,
-    search_methods,
-    search_sdg_indicators,
-    search_species,
-    search_usecases,
-)
+from agentic_cba_indicators.prompts import get_system_prompt
+from agentic_cba_indicators.tools import FULL_TOOLS, REDUCED_TOOLS
 
-# Load system prompt from external file
-PROMPT_FILE = Path(__file__).parent / "prompts" / "system_prompt_minimal.md"
-
-
-def load_system_prompt() -> str:
-    """Load the system prompt from the external markdown file."""
-    if PROMPT_FILE.exists():
-        return PROMPT_FILE.read_text(encoding="utf-8")
-    else:
-        # Fallback minimal prompt if file is missing
-        return """You are a helpful data assistant for sustainable agriculture.
-Call tools to get real data. Never ask clarifying questions."""
-
-
-# =============================================================================
-# Tool Sets
-# =============================================================================
-
-# Reduced tool set (19 tools) - for smaller models like llama3.1:8b
-REDUCED_TOOLS = [
-    # Essential Context Tools
-    get_current_weather,
-    get_climate_data,
-    get_soil_properties,
-    get_soil_carbon,
-    get_country_indicators,
-    # CBA Knowledge Base (core)
-    search_indicators,
-    search_methods,
-    get_indicator_details,
-    list_knowledge_base_stats,
-    # Indicator Selection (core)
-    find_indicators_by_principle,
-    find_feasible_methods,
-    list_indicators_by_component,
-    list_available_classes,
-    find_indicators_by_class,
-    compare_indicators,
-    export_indicator_selection,
-    # Use Cases
-    search_usecases,
-    get_usecase_details,
-    get_usecases_by_indicator,
-]
-
-# Full tool set (52 tools) - for larger models like Claude, GPT-4, etc.
-FULL_TOOLS = [
-    # Weather & Climate (Open-Meteo)
-    get_current_weather,
-    get_weather_forecast,
-    get_climate_data,
-    get_historical_climate,
-    # Agricultural Climate (NASA POWER)
-    get_agricultural_climate,
-    get_solar_radiation,
-    get_evapotranspiration,
-    # Soil Properties (ISRIC SoilGrids)
-    get_soil_properties,
-    get_soil_carbon,
-    get_soil_texture,
-    # Biodiversity (GBIF)
-    search_species,
-    get_species_occurrences,
-    get_biodiversity_summary,
-    get_species_taxonomy,
-    # Labor Statistics (ILO STAT)
-    get_labor_indicators,
-    get_employment_by_gender,
-    get_labor_time_series,
-    search_labor_indicators,
-    # Gender Statistics (World Bank)
-    get_gender_indicators,
-    compare_gender_gaps,
-    get_gender_time_series,
-    search_gender_indicators,
-    # Agriculture & Forestry (FAO)
-    get_forest_statistics,
-    get_crop_production,
-    get_land_use,
-    search_fao_indicators,
-    # Commodity Markets (USDA FAS)
-    get_commodity_production,
-    get_commodity_trade,
-    compare_commodity_producers,
-    list_fas_commodities,
-    search_commodity_data,
-    # SDG Indicators (UN SDG API)
-    get_sdg_progress,
-    search_sdg_indicators,
-    get_sdg_series_data,
-    get_sdg_for_cba_principle,
-    # Socio-economic (World Bank & REST Countries)
-    get_country_indicators,
-    get_world_bank_data,
-    # Knowledge Base
-    search_indicators,
-    search_methods,
-    get_indicator_details,
-    list_knowledge_base_stats,
-    # Indicator Selection
-    find_indicators_by_principle,
-    find_feasible_methods,
-    list_indicators_by_component,
-    list_available_classes,
-    find_indicators_by_class,
-    find_indicators_by_measurement_approach,
-    compare_indicators,
-    export_indicator_selection,
-    # Use Cases
-    search_usecases,
-    get_usecase_details,
-    get_usecases_by_indicator,
-]
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def create_agent_from_config(
@@ -206,7 +45,7 @@ def create_agent_from_config(
     Create and configure the Strands agent from configuration file.
 
     Args:
-        config_path: Path to providers.yaml (optional, defaults to config/providers.yaml)
+        config_path: Path to providers.yaml (optional, uses bundled default)
         provider_override: Override the active provider from command line
 
     Returns:
@@ -231,15 +70,12 @@ def create_agent_from_config(
     )
 
     # Select tool set
-    if agent_config.tool_set == "full":
-        tools = FULL_TOOLS
-    else:
-        tools = REDUCED_TOOLS
+    tools = FULL_TOOLS if agent_config.tool_set == "full" else REDUCED_TOOLS
 
     # Create agent
     agent = Agent(
         model=model,
-        system_prompt=load_system_prompt(),
+        system_prompt=get_system_prompt(),
         conversation_manager=conversation_manager,
         tools=tools,
     )
@@ -273,7 +109,7 @@ def create_agent(
 
     agent = Agent(
         model=ollama_model,
-        system_prompt=load_system_prompt(),
+        system_prompt=get_system_prompt(),
         conversation_manager=conversation_manager,
         tools=REDUCED_TOOLS,
     )
@@ -281,7 +117,9 @@ def create_agent(
     return agent
 
 
-def print_banner(tool_count: int, provider_config: ProviderConfig | None = None):
+def print_banner(
+    tool_count: int, provider_config: ProviderConfig | None = None
+) -> None:
     """Print the welcome banner."""
     print("\n" + "=" * 60)
     print("🌍 Data Assistant - CBA Indicators & Sustainable Agriculture")
@@ -306,60 +144,45 @@ def print_banner(tool_count: int, provider_config: ProviderConfig | None = None)
     print("-" * 60 + "\n")
 
 
-def print_help():
+def print_help() -> None:
     """Print example queries."""
     print("\n📖 Example Queries:\n")
     print("Weather & Climate:")
     print("  • What's the weather in Tokyo?")
     print("  • Give me a 5-day forecast for London")
     print("  • What are the climate normals for Sydney?")
-    print("  • How was the weather in Paris in 2020?")
     print("")
     print("Agricultural Climate (NASA POWER):")
     print("  • Get agricultural climate data for Iowa from Jan-Jun 2024")
     print("  • What's the solar radiation in Brazil for 2023?")
-    print("  • Calculate evapotranspiration for Kenya last month")
     print("")
     print("Soil Properties (SoilGrids):")
     print("  • What are the soil properties in Chad?")
     print("  • Get soil carbon data for my location: 5.5, -0.2")
-    print("  • What's the soil texture at 10, 20?")
     print("")
     print("Biodiversity (GBIF):")
     print("  • Search for African elephant species")
-    print("  • Where have lions been observed in Kenya?")
     print("  • Get biodiversity summary for the Amazon rainforest")
     print("")
     print("Labor Statistics (ILO):")
     print("  • What are the labor indicators for Brazil?")
     print("  • Compare employment by gender in Kenya")
-    print("  • Show unemployment trends for Germany since 2010")
     print("")
     print("Gender Statistics (World Bank):")
     print("  • Get gender indicators for Kenya")
     print("  • Compare gender gaps in education for Brazil")
-    print("  • Show female labor force participation trends in India")
     print("")
     print("Agriculture & Forestry (FAO):")
     print("  • Get forest statistics for Brazil")
     print("  • Show cotton production in Chad over the last 10 years")
-    print("  • What's the land use pattern in Kenya?")
-    print("")
-    print("Commodity Markets (USDA FAS):")
-    print("  • Get cotton production data for Chad")
-    print("  • Compare top coffee producing countries")
-    print("  • Show cocoa trade trends for Ivory Coast")
-    print("  • List available commodities in the FAS database")
     print("")
     print("UN SDG Indicators:")
     print("  • What's Brazil's progress on SDG 2 (Zero Hunger)?")
     print("  • Find SDG indicators related to water quality")
-    print("  • Which SDGs align with CBA principle 1?")
     print("")
     print("Socio-Economic:")
     print("  • Tell me about Japan")
     print("  • What's the GDP of Germany?")
-    print("  • Compare life expectancy in Sweden and USA")
     print("")
     print("CBA Indicators:")
     print("  • Find indicators for soil health measurement")
@@ -368,7 +191,7 @@ def print_help():
     print("")
 
 
-def main():
+def main() -> None:
     """Main entry point for the CLI chatbot."""
     import sys
 
@@ -382,7 +205,7 @@ def main():
         elif arg.startswith("--provider="):
             provider_override = arg.split("=")[1]
         elif arg in ["-h", "--help"]:
-            print("Usage: python main.py [OPTIONS]")
+            print("Usage: agentic-cba [OPTIONS]")
             print("\nOptions:")
             print("  --config=PATH       Path to providers.yaml config file")
             print(
@@ -390,15 +213,17 @@ def main():
             )
             print("\nExamples:")
             print(
-                "  python main.py                          # Use default config (Ollama)"
+                "  agentic-cba                          # Use default config (Ollama)"
             )
-            print("  python main.py --provider=anthropic     # Use Anthropic Claude")
-            print("  python main.py --provider=openai        # Use OpenAI GPT")
-            print("  python main.py --provider=bedrock       # Use AWS Bedrock")
-            print("  python main.py --provider=gemini        # Use Google Gemini")
-            print("  python main.py --config=my_config.yaml  # Use custom config file")
+            print("  agentic-cba --provider=anthropic     # Use Anthropic Claude")
+            print("  agentic-cba --provider=openai        # Use OpenAI GPT")
+            print("  agentic-cba --provider=bedrock       # Use AWS Bedrock")
+            print("  agentic-cba --provider=gemini        # Use Google Gemini")
+            print("  agentic-cba --config=my_config.yaml  # Use custom config file")
             print("\nConfiguration:")
-            print("  Edit config/providers.yaml to set API keys and model preferences.")
+            print(
+                "  Create a providers.yaml in your config directory or pass --config."
+            )
             print("  Environment variables are supported: ${ANTHROPIC_API_KEY}")
             sys.exit(0)
 
@@ -416,7 +241,7 @@ def main():
 
     except FileNotFoundError as e:
         print(f"\n❌ Configuration Error: {e}")
-        print("   Create config/providers.yaml or specify --config=PATH")
+        print("   Create a providers.yaml config file or specify --config=PATH")
         sys.exit(1)
     except ImportError as e:
         print(f"\n❌ Missing Dependency: {e}")

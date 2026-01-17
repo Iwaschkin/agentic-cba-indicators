@@ -331,9 +331,8 @@ def get_evapotranspiration(location: str, start_date: str, end_date: str) -> str
         params = data["properties"]["parameter"]
         location_str = format_location(lat, lon)
 
-        # Calculate simplified reference ET (Hargreaves method as fallback)
-        # ET0 = 0.0023 * Ra * (Tmean + 17.8) * (Tmax - Tmin)^0.5
-        # For simplicity, we'll calculate from available data
+        # Simplified reference ET using Hargreaves approximation
+        # Formula: ET0 ~= 0.0023 * Ra * (Tmean + 17.8) * sqrt(Tmax - Tmin)
 
         t2m = params.get("T2M", {})
         rh = params.get("RH2M", {})
@@ -342,7 +341,7 @@ def get_evapotranspiration(location: str, start_date: str, end_date: str) -> str
 
         # Calculate daily ET estimates (simplified)
         et_values = []
-        for date_key in t2m.keys():
+        for date_key in t2m:
             temp = t2m.get(date_key, -999)
             humidity = rh.get(date_key, -999)
             wind = ws.get(date_key, -999)
@@ -397,7 +396,7 @@ def get_evapotranspiration(location: str, start_date: str, end_date: str) -> str
         output.append("")
         output.append("Notes:")
         output.append("- ET₀ is reference crop evapotranspiration (grass reference)")
-        output.append("- Actual crop ET = ET₀ × crop coefficient (Kc)")
+        output.append("- Actual crop ET = ET₀ x crop coefficient (Kc)")
         output.append("- Higher ET₀ = greater irrigation water requirement")
 
         return "\n".join(output)

@@ -260,7 +260,7 @@ def get_gender_indicators(country: str, category: str | None = None) -> str:
         }
         if not indicators_to_fetch:
             valid = ", ".join(
-                sorted(set(v["category"] for v in GENDER_INDICATORS.values()))
+                sorted({v["category"] for v in GENDER_INDICATORS.values()})
             )
             return f"Unknown category: '{category}'. Valid categories: {valid}"
     else:
@@ -301,7 +301,7 @@ def get_gender_indicators(country: str, category: str | None = None) -> str:
             output.append(f"📊 {cat}")
             output.append("-" * 40)
 
-            for key, info in by_category[cat]:
+            for _key, info in by_category[cat]:
                 try:
                     data = _fetch_wb_indicator(country_code, info["id"])
                     value, year = _get_latest_value(data)
@@ -391,8 +391,8 @@ def compare_gender_gaps(country: str) -> str:
                 female_data = _fetch_wb_indicator(country_code, female_info["id"])
                 male_data = _fetch_wb_indicator(country_code, male_info["id"])
 
-                female_val, female_year = _get_latest_value(female_data)
-                male_val, male_year = _get_latest_value(male_data)
+                female_val, _female_year = _get_latest_value(female_data)
+                male_val, _male_year = _get_latest_value(male_data)
 
                 f_str = f"{female_val:.1f}" if female_val is not None else "N/A"
                 m_str = f"{male_val:.1f}" if male_val is not None else "N/A"
@@ -471,7 +471,7 @@ def get_gender_time_series(
     indicator_key = indicator.lower().replace(" ", "_").replace("-", "_")
 
     if indicator_key not in GENDER_INDICATORS:
-        categories = {}
+        categories: dict[str, list[str]] = {}
         for k, v in GENDER_INDICATORS.items():
             cat = v["category"]
             if cat not in categories:
@@ -481,8 +481,7 @@ def get_gender_time_series(
         output = [f"Unknown indicator: '{indicator}'", "", "Available indicators:"]
         for cat, keys in sorted(categories.items()):
             output.append(f"\n{cat}:")
-            for k in sorted(keys):
-                output.append(f"  - {k}")
+            output.extend(f"  - {k}" for k in sorted(keys))
         return "\n".join(output)
 
     info = GENDER_INDICATORS[indicator_key]
@@ -517,7 +516,7 @@ def get_gender_time_series(
 
         if values:
             output.append("-" * 24)
-            output.append(f"{'Average':<10} {sum(values)/len(values):>12.1f}")
+            output.append(f"{'Average':<10} {sum(values) / len(values):>12.1f}")
             output.append(f"{'Min':<10} {min(values):>12.1f}")
             output.append(f"{'Max':<10} {max(values):>12.1f}")
 
@@ -526,7 +525,9 @@ def get_gender_time_series(
                 direction = (
                     "increased"
                     if change > 0
-                    else "decreased" if change < 0 else "unchanged"
+                    else "decreased"
+                    if change < 0
+                    else "unchanged"
                 )
                 output.append("")
                 output.append(f"Overall change: {direction} by {abs(change):.1f}")
@@ -562,7 +563,7 @@ def search_gender_indicators(query: str) -> str:
             matches.append((key, info))
 
     if not matches:
-        categories = sorted(set(v["category"] for v in GENDER_INDICATORS.values()))
+        categories = sorted({v["category"] for v in GENDER_INDICATORS.values()})
         return (
             f"No indicators found matching '{query}'.\n\n"
             f"Available categories: {', '.join(categories)}\n\n"

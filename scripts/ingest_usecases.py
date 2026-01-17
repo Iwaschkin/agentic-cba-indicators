@@ -28,7 +28,7 @@ import sys
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 import chromadb
 import httpx
@@ -37,18 +37,47 @@ import pandas as pd
 if TYPE_CHECKING:
     from chromadb.api import ClientAPI
 
+
+class IngestionResult(TypedDict):
+    """Type definition for ingestion result dictionary."""
+
+    usecases_processed: int
+    total_docs: int
+    errors: list[str]
+
+
+# Add src to path for agentic_cba_indicators imports
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+import os
+
+from agentic_cba_indicators.paths import get_kb_path
+
 # =============================================================================
 # Configuration
 # =============================================================================
+
 
 USECASES_DIR = Path(__file__).parent.parent / "cba_inputs" / "example"
 MASTER_EXCEL = (
     Path(__file__).parent.parent / "cba_inputs" / "CBA ME Indicators List.xlsx"
 )
-KB_PATH = Path(__file__).parent.parent / "kb_data"
-OLLAMA_HOST = "http://localhost:11434"
-EMBEDDING_MODEL = "nomic-embed-text"
+KB_PATH = get_kb_path()
+
+# Ollama settings (configurable via environment variables)
+# Supports both local Ollama and Ollama Cloud (https://ollama.com)
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")  # Optional, for Ollama Cloud
+EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 FUZZY_MATCH_THRESHOLD = 0.85  # 85% similarity required for name-to-ID matching
+
+
+def _get_ollama_headers() -> dict[str, str]:
+    """Get headers for Ollama API requests, including auth if API key is set."""
+    headers = {"Content-Type": "application/json"}
+    if OLLAMA_API_KEY:
+        headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
+    return headers
+
 
 # Use case definitions - add new projects here
 USE_CASES = [
@@ -141,14 +170,12 @@ class UseCaseOutcomeDoc:
             f"Selected Indicators ({len(self.selected_indicator_names)}):",
         ]
 
-        for name in self.selected_indicator_names:
-            parts.append(f"  - {name}")
+        parts.extend(f"  - {name}" for name in self.selected_indicator_names)
 
         if self.extra_indicator_names:
             parts.append("")
             parts.append(f"Extra Indicators ({len(self.extra_indicator_names)}):")
-            for name in self.extra_indicator_names:
-                parts.append(f"  - {name}")
+            parts.extend(f"  - {name}" for name in self.extra_indicator_names)
 
         return "\n".join(parts)
 
@@ -181,10 +208,8 @@ def extract_pdf_text(pdf_path: Path) -> str:
         print("  ⚠ pymupdf not installed. Run: uv add pymupdf")
         return ""
 
-    text_parts = []
     with fitz.open(pdf_path) as doc:
-        for page in doc:
-            text_parts.append(page.get_text())
+        text_parts = [page.get_text() for page in doc]
 
     full_text = "\n".join(text_parts)
 
@@ -381,16 +406,18 @@ def load_usecase_excel(
 
 
 def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
-    """Generate embeddings for a batch of texts using Ollama."""
+    """Generate embeddings for a batch of texts using Ollama (local or cloud)."""
     MAX_CHARS = 6000
     truncated_texts = [
         text[:MAX_CHARS] + "..." if len(text) > MAX_CHARS else text for text in texts
     ]
 
+    headers = _get_ollama_headers()
     with httpx.Client(timeout=120.0) as client:
         response = client.post(
             f"{OLLAMA_HOST}/api/embed",
             json={"model": EMBEDDING_MODEL, "input": truncated_texts},
+            headers=headers,
         )
         if response.status_code != 200:
             # Fall back to individual embedding
@@ -400,6 +427,7 @@ def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
                     single_resp = client.post(
                         f"{OLLAMA_HOST}/api/embed",
                         json={"model": EMBEDDING_MODEL, "input": text},
+                        headers=headers,
                     )
                     single_resp.raise_for_status()
                     embeddings.append(single_resp.json()["embeddings"][0])
@@ -414,14 +442,14 @@ def get_embeddings_batch(texts: list[str]) -> list[list[float]]:
 # =============================================================================
 
 
-def get_chroma_client() -> "ClientAPI":
+def get_chroma_client() -> ClientAPI:
     """Get or create persistent ChromaDB client."""
     KB_PATH.mkdir(parents=True, exist_ok=True)
     return chromadb.PersistentClient(path=str(KB_PATH))
 
 
 def upsert_usecase_docs(
-    client: "ClientAPI",
+    client: ClientAPI,
     overview: UseCaseOverviewDoc | None,
     outcomes: list[UseCaseOutcomeDoc],
     verbose: bool = False,
@@ -431,7 +459,7 @@ def upsert_usecase_docs(
     collection = client.get_or_create_collection(name="usecases")
 
     # Build document lists
-    all_docs = []
+    all_docs: list[UseCaseOverviewDoc | UseCaseOutcomeDoc] = []
     if overview:
         all_docs.append(overview)
     all_docs.extend(outcomes)
@@ -471,7 +499,7 @@ def upsert_usecase_docs(
 def ingest_usecase(
     use_case_config: dict,
     master_lookup: dict[str, int],
-    client: "ClientAPI",
+    client: ClientAPI,
     verbose: bool = False,
     dry_run: bool = False,
 ) -> dict:
@@ -541,9 +569,9 @@ def ingest(
     clear: bool = False,
     verbose: bool = False,
     dry_run: bool = False,
-) -> dict:
+) -> IngestionResult:
     """Main ingestion function for all use cases."""
-    results = {
+    results: IngestionResult = {
         "usecases_processed": 0,
         "total_docs": 0,
         "errors": [],
@@ -591,10 +619,10 @@ def ingest(
             use_case_config, master_lookup, client, verbose=verbose, dry_run=dry_run
         )
 
-        results["usecases_processed"] += 1
+        results["usecases_processed"] += 1  # type: ignore[operator]
         if case_summary["overview"]:
-            results["total_docs"] += 1
-        results["total_docs"] += case_summary["outcomes"]
+            results["total_docs"] += 1  # type: ignore[operator]
+        results["total_docs"] += case_summary["outcomes"]  # type: ignore[operator]
 
         print(f"\n  Summary for {case_summary['slug']}:")
         print(f"    Overview doc: {'Yes' if case_summary['overview'] else 'No'}")

@@ -5,6 +5,9 @@ Loads configuration from YAML files and creates the appropriate Strands model
 provider (Ollama, Anthropic, OpenAI, Bedrock, or Gemini).
 """
 
+from __future__ import annotations
+
+import importlib.resources
 import os
 import re
 from dataclasses import dataclass, field
@@ -12,6 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from agentic_cba_indicators.paths import get_user_config_path
 
 
 @dataclass
@@ -60,21 +65,41 @@ def load_config(config_path: Path | str | None = None) -> dict[str, Any]:
     """
     Load provider configuration from YAML file.
 
+    Resolution order:
+    1. Explicit config_path argument
+    2. User config: ~/.config/strands-cli/providers.yaml (or platform equivalent)
+    3. Bundled default: strands_cli/config/providers.yaml
+
     Args:
-        config_path: Path to config file. Defaults to config/providers.yaml
+        config_path: Path to config file. If None, searches user config then bundled.
 
     Returns:
         Parsed and environment-expanded configuration dictionary
     """
-    if config_path is None:
-        config_path = Path(__file__).parent.parent / "config" / "providers.yaml"
-    else:
+    if config_path is not None:
         config_path = Path(config_path)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+    else:
+        # Check user config first
+        user_config = get_user_config_path()
+        if user_config.exists():
+            config_path = user_config
+        else:
+            # Fall back to bundled config
+            try:
+                files = importlib.resources.files("strands_cli.config")
+                bundled = files / "providers.yaml"
+                # Read directly from package resources
+                content = bundled.read_text(encoding="utf-8")
+                config = yaml.safe_load(content)
+                return _expand_env_vars(config)
+            except Exception as e:
+                raise FileNotFoundError(
+                    f"No config file found. Create one at: {user_config}"
+                ) from e
 
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-
-    with open(config_path, encoding="utf-8") as f:
+    with Path(config_path).open(encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
     # Expand environment variables
@@ -140,9 +165,7 @@ def create_model(provider_config: ProviderConfig):
     """
     name = provider_config.name
 
-    # -------------------------------------------------------------------------
-    # Ollama (Local)
-    # -------------------------------------------------------------------------
+    # --- Ollama (Local) ---
     if name == "ollama":
         from strands.models.ollama import OllamaModel
 
@@ -153,16 +176,14 @@ def create_model(provider_config: ProviderConfig):
             options=provider_config.options,
         )
 
-    # -------------------------------------------------------------------------
-    # Anthropic (Claude)
-    # -------------------------------------------------------------------------
+    # --- Anthropic (Claude) ---
     elif name == "anthropic":
         try:
             from strands.models.anthropic import AnthropicModel
         except ImportError:
             raise ImportError(
                 "Anthropic provider not installed. Run: uv add 'strands-agents[anthropic]'"
-            )
+            ) from None
 
         if not provider_config.api_key:
             raise ValueError(
@@ -177,16 +198,14 @@ def create_model(provider_config: ProviderConfig):
             params={"temperature": provider_config.temperature},
         )
 
-    # -------------------------------------------------------------------------
-    # OpenAI (GPT)
-    # -------------------------------------------------------------------------
+    # --- OpenAI (GPT) ---
     elif name == "openai":
         try:
             from strands.models.openai import OpenAIModel
         except ImportError:
             raise ImportError(
                 "OpenAI provider not installed. Run: uv add 'strands-agents[openai]'"
-            )
+            ) from None
 
         if not provider_config.api_key:
             raise ValueError(
@@ -207,16 +226,14 @@ def create_model(provider_config: ProviderConfig):
             },
         )
 
-    # -------------------------------------------------------------------------
-    # AWS Bedrock
-    # -------------------------------------------------------------------------
+    # --- AWS Bedrock ---
     elif name == "bedrock":
         try:
             from strands.models import BedrockModel
         except ImportError:
             raise ImportError(
                 "Bedrock provider not installed. Run: uv add 'strands-agents[bedrock]'"
-            )
+            ) from None
 
         kwargs: dict[str, Any] = {
             "model_id": provider_config.model_id,
@@ -231,16 +248,14 @@ def create_model(provider_config: ProviderConfig):
 
         return BedrockModel(**kwargs)
 
-    # -------------------------------------------------------------------------
-    # Google Gemini
-    # -------------------------------------------------------------------------
+    # --- Google Gemini ---
     elif name == "gemini":
         try:
             from strands.models.gemini import GeminiModel
         except ImportError:
             raise ImportError(
                 "Gemini provider not installed. Run: uv add 'strands-agents[gemini]'"
-            )
+            ) from None
 
         if not provider_config.api_key:
             raise ValueError(

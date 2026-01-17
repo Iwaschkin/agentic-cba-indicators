@@ -178,7 +178,7 @@ def get_forest_statistics(country: str) -> str:
         output.append("Available FAO Forest Indicators:")
         output.append("-" * 40)
 
-        for key, info in FOREST_ELEMENTS.items():
+        for info in FOREST_ELEMENTS.values():
             output.append(f"• {info['name']}")
             output.append(f"  Unit: {info['unit']}")
             output.append(f"  Domain: {info['domain']}")
@@ -234,8 +234,9 @@ def get_crop_production(country: str, crop: str) -> str:
             "Available metrics:",
         ]
 
-        for key, info in CROP_ELEMENTS.items():
-            output.append(f"  • {info['name']} ({info['unit']})")
+        output.extend(
+            f"  • {info['name']} ({info['unit']})" for info in CROP_ELEMENTS.values()
+        )
 
         output.append("")
         output.append("FAO Production Data Coverage:")
@@ -374,11 +375,11 @@ def search_fao_indicators(query: str) -> str:
         },
     }
 
-    matches = []
+    matches: list[tuple[str, dict[str, Any]]] = []
     for code, info in datasets.items():
-        if any(kw in query_lower for kw in info["keywords"]):
-            matches.append((code, info))
-        elif query_lower in info["name"].lower():
+        keywords: list[str] = info["keywords"]  # type: ignore[assignment]
+        name: str = info["name"]  # type: ignore[assignment]
+        if any(kw in query_lower for kw in keywords) or query_lower in name.lower():
             matches.append((code, info))
 
     if not matches:

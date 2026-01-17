@@ -1,7 +1,6 @@
 """Weather tools using Open-Meteo API (free, no API key required)."""
 
 import httpx
-
 from strands import tool
 
 
@@ -101,13 +100,13 @@ def get_current_weather(city: str) -> str:
 
     weather_desc = weather_codes.get(current.get("weather_code", 0), "Unknown")
 
-    return f"""Current Weather for {location['name']}, {location['country']}:
+    return f"""Current Weather for {location["name"]}, {location["country"]}:
 - Conditions: {weather_desc}
-- Temperature: {current.get('temperature_2m')}{units.get('temperature_2m', '°C')}
-- Feels Like: {current.get('apparent_temperature')}{units.get('apparent_temperature', '°C')}
-- Humidity: {current.get('relative_humidity_2m')}{units.get('relative_humidity_2m', '%')}
-- Wind: {current.get('wind_speed_10m')} {units.get('wind_speed_10m', 'km/h')} from {current.get('wind_direction_10m')}°
-- Precipitation: {current.get('precipitation')} {units.get('precipitation', 'mm')}"""
+- Temperature: {current.get("temperature_2m")}{units.get("temperature_2m", "°C")}
+- Feels Like: {current.get("apparent_temperature")}{units.get("apparent_temperature", "°C")}
+- Humidity: {current.get("relative_humidity_2m")}{units.get("relative_humidity_2m", "%")}
+- Wind: {current.get("wind_speed_10m")} {units.get("wind_speed_10m", "km/h")} from {current.get("wind_direction_10m")}°
+- Precipitation: {current.get("precipitation")} {units.get("precipitation", "mm")}"""
 
 
 @tool

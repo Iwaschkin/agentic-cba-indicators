@@ -1,7 +1,6 @@
 """Climate tools using Open-Meteo Climate API (free, no API key required)."""
 
 import httpx
-
 from strands import tool
 
 
@@ -83,20 +82,20 @@ def get_climate_data(city: str) -> str:
     precip = daily.get("precipitation_sum", [])
     dates = daily.get("time", [])
 
-    monthly_data = {
+    monthly_data: dict[int, dict[str, list[float]]] = {
         i: {"temps": [], "highs": [], "lows": [], "precip": []} for i in range(12)
     }
 
     for i, date in enumerate(dates):
         if i < len(temps_mean) and temps_mean[i] is not None:
-            month = int(date[5:7]) - 1
-            monthly_data[month]["temps"].append(temps_mean[i])
+            month_idx = int(date[5:7]) - 1
+            monthly_data[month_idx]["temps"].append(temps_mean[i])
             if i < len(temps_max) and temps_max[i] is not None:
-                monthly_data[month]["highs"].append(temps_max[i])
+                monthly_data[month_idx]["highs"].append(temps_max[i])
             if i < len(temps_min) and temps_min[i] is not None:
-                monthly_data[month]["lows"].append(temps_min[i])
+                monthly_data[month_idx]["lows"].append(temps_min[i])
             if i < len(precip) and precip[i] is not None:
-                monthly_data[month]["precip"].append(precip[i])
+                monthly_data[month_idx]["precip"].append(precip[i])
 
     lines = [
         f"Climate Normals for {location['name']}, {location['country']} (1991-2020):\n"
@@ -164,14 +163,14 @@ def get_historical_climate(city: str, year: int) -> str:
     if not temps_mean:
         return f"No data available for {city} in {year}"
 
-    return f"""Historical Climate for {location['name']}, {location['country']} ({year}):
+    return f"""Historical Climate for {location["name"]}, {location["country"]} ({year}):
 
 📊 Temperature Summary:
-- Annual Mean: {sum(temps_mean)/len(temps_mean):.1f}°C
+- Annual Mean: {sum(temps_mean) / len(temps_mean):.1f}°C
 - Highest: {max(temps_max):.1f}°C
 - Lowest: {min(temps_min):.1f}°C
-- Average Daily High: {sum(temps_max)/len(temps_max):.1f}°C
-- Average Daily Low: {sum(temps_min)/len(temps_min):.1f}°C
+- Average Daily High: {sum(temps_max) / len(temps_max):.1f}°C
+- Average Daily Low: {sum(temps_min) / len(temps_min):.1f}°C
 
 🌧️ Precipitation Summary:
 - Total Annual: {sum(precip):.1f}mm

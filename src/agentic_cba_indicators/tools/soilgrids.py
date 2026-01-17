@@ -30,7 +30,7 @@ SOIL_PROPERTIES = {
     "sand": ("Sand Content", "%", "g/kg", 10),
     "silt": ("Silt Content", "%", "g/kg", 10),
     "nitrogen": ("Total Nitrogen", "g/kg", "cg/kg", 10),
-    "phh2o": ("pH (H₂O)", "", "pH×10", 10),
+    "phh2o": ("pH (H₂O)", "", "pH x 10", 10),
     "ocd": ("Organic Carbon Density", "kg/m³", "hg/m³", 10),
 }
 
@@ -183,7 +183,7 @@ def get_soil_properties(
             if prop_name not in SOIL_PROPERTIES:
                 continue
 
-            display_name, unit, api_unit, divisor = SOIL_PROPERTIES[prop_name]
+            display_name, unit, _api_unit, divisor = SOIL_PROPERTIES[prop_name]
 
             # Get values for each depth and average if needed
             values = []
@@ -273,8 +273,8 @@ def get_soil_carbon(location: str) -> str:
             "-" * 52,
         ]
 
-        total_stock_30cm = 0
-        total_stock_100cm = 0
+        total_stock_30cm: float = 0.0
+        total_stock_100cm: float = 0.0
 
         for depth in DEPTHS:
             soc = soc_data.get(depth)
@@ -291,7 +291,9 @@ def get_soil_carbon(location: str) -> str:
             if ocd:
                 # Extract depth range in cm
                 parts = depth.replace("cm", "").split("-")
-                thickness = (int(parts[1]) - int(parts[0])) / 100  # Convert to meters
+                thickness = (
+                    float(parts[1]) - float(parts[0])
+                ) / 100  # Convert to meters
                 stock = ocd * thickness  # kg/m²
 
                 if int(parts[1]) <= 30:

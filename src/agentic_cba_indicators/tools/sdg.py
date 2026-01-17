@@ -552,7 +552,8 @@ def get_sdg_for_cba_principle(principle: str) -> str:
     ]
 
     for goal in goals:
-        goal_name = SDG_GOALS.get(goal, "Unknown")
+        goal_int = goal if isinstance(goal, int) else int(str(goal))
+        goal_name = SDG_GOALS.get(goal_int, "Unknown")
         output.append(f"  Goal {goal}: {goal_name}")
 
     output.append("")
@@ -570,8 +571,9 @@ def get_sdg_for_cba_principle(principle: str) -> str:
         "7": ["sustainable", "partnership", "resource efficiency"],
     }
 
-    for term in suggestions.get(p_str, []):
-        output.append(f"  - search_sdg_indicators('{term}')")
+    output.extend(
+        f"  - search_sdg_indicators('{term}')" for term in suggestions.get(p_str, [])
+    )
 
     output.append("")
     output.append("Use these to find specific indicators for your CBA assessment.")
