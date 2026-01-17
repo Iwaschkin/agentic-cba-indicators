@@ -6,7 +6,18 @@
 
 ## Pending
 
-(None)
+### GFW Forestry Tools Implementation
+- [TASK042] Create GFW API request helper - Core infrastructure
+- [TASK043] Create circular geostore helper - Geostore creation
+- [TASK044] Add input validation helpers - Country, window, radius validation
+- [TASK045] Implement tree cover loss trends tool - Historical deforestation
+- [TASK046] Implement loss by driver tool - Deforestation causes
+- [TASK047] Implement forest carbon stock tool - Biomass baseline
+- [TASK048] Implement forest extent tool - Current forest cover
+- [TASK049] Update tool exports - Wire into __init__.py
+- [TASK050] Update .env.example - GFW API key guidance
+- [TASK051] Create forestry tests - 20+ tests
+- [TASK052] Final validation - pytest/ruff/pyright/commit
 
 ## Completed
 

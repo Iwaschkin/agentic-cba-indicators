@@ -26,6 +26,12 @@ from .commodities import (
     list_fas_commodities,
     search_commodity_data,
 )
+from .forestry import (
+    get_forest_carbon_stock,
+    get_forest_extent,
+    get_tree_cover_loss_by_driver,
+    get_tree_cover_loss_trends,
+)
 from .gender import (
     compare_gender_gaps,
     get_gender_indicators,
@@ -97,6 +103,9 @@ __all__ = [
     "get_current_weather",
     "get_employment_by_gender",
     "get_evapotranspiration",
+    # Forestry / Global Forest Watch
+    "get_forest_carbon_stock",
+    "get_forest_extent",
     "get_forest_statistics",
     # Gender Statistics (World Bank)
     "get_gender_indicators",
@@ -118,6 +127,8 @@ __all__ = [
     "get_solar_radiation",
     "get_species_occurrences",
     "get_species_taxonomy",
+    "get_tree_cover_loss_by_driver",
+    "get_tree_cover_loss_trends",
     "get_usecase_details",
     "get_usecases_by_indicator",
     "get_weather_forecast",
@@ -213,6 +224,11 @@ FULL_TOOLS = [
     search_sdg_indicators,
     get_sdg_series_data,
     get_sdg_for_cba_principle,
+    # Forestry / Global Forest Watch
+    get_tree_cover_loss_trends,
+    get_tree_cover_loss_by_driver,
+    get_forest_carbon_stock,
+    get_forest_extent,
     # Socio-economic
     get_country_indicators,
     get_world_bank_data,
