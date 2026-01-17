@@ -3,18 +3,20 @@
 ## What Works
 - CLI agent creation and tooling
 - Knowledge base ingestion scripts (with embedding retry/validation)
-- 83 automated tests covering:
+- 133 automated tests covering:
   - Configuration loading and validation
   - Path resolution with XDG support
   - HTTP utilities with retry logic and error sanitization
   - Coordinate validation and geocoding
   - Integration tests for CLI, ChromaDB, agent creation
   - Internal help tools (list_tools, describe_tool)
+  - GFW forestry tools (35 tests)
 - Security hardening:
   - Error message sanitization (no URL params/credentials leaked)
   - TLS enforcement for Ollama connections
   - Path traversal prevention for config overrides
   - Environment variable whitelist for YAML expansion
+  - API key management via _secrets.py
 - Reliability improvements:
   - Rate limiting for Ollama embeddings
   - Retry logic for ChromaDB operations
@@ -31,8 +33,20 @@
   - `list_tools()` - Agent self-discovery of available tools
   - `describe_tool()` - Agent access to full tool documentation
   - System prompts guide internal-only usage
+- GFW Forestry Tools:
+  - `get_tree_cover_loss_trends()` - Historical deforestation analysis
+  - `get_tree_cover_loss_by_driver()` - Loss by driver category
+  - `get_forest_carbon_stock()` - Above-ground biomass and carbon
+  - `get_forest_extent()` - Current forest cover assessment
 
 ## Completed
+
+### GFW Forestry Tools - COMPLETE (TASK042-TASK052)
+- Phase 1: Infrastructure - Created helpers and validation ✅
+- Phase 2: Country Tools - Implemented loss trends and driver tools ✅
+- Phase 3: Geostore Tools - Implemented carbon stock and extent tools ✅
+- Phase 4: Integration - Updated exports and .env.example ✅
+- Phase 5: Testing - Added 35 tests, all passing ✅
 
 ### Internal Tool Help System - COMPLETE (TASK038-TASK041)
 - Phase 1: Core Module - Created `_help.py` with registry and tools ✅

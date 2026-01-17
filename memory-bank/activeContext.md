@@ -1,27 +1,29 @@
 # Active Context
 
 ## Current Focus
-**INTERNAL TOOL HELP SYSTEM COMPLETE** - Added agent self-discovery capability via internal help tools.
+**GFW FORESTRY TOOLS COMPLETE** - Added 4 Global Forest Watch tools for forest state monitoring.
 
 ## Recent Changes
-- Created `_help.py` module with `list_tools()` and `describe_tool()` tools
-- Integrated help tools into CLI agent creation (appended to tool list)
-- Updated system prompts with internal-only guidance
-- Added 8 unit tests for help tools (83 total tests now)
+- Created `forestry.py` module with 4 GFW tools
+- Added validation helpers for country codes, window years, radius, coordinates
+- Implemented geostore creation for point-radius queries
+- Integrated tools into exports (56 tools in FULL_TOOLS)
+- Added 35 unit tests for forestry module (133 total tests)
 
 ## Key Deliverables
-- `src/agentic_cba_indicators/tools/_help.py` - Internal help tools module
-- Updated `cli.py` - Registers and appends help tools to agent
-- Updated `system_prompt.md` and `system_prompt_minimal.md` - Internal tool guidance
-- `tests/test_tools_help.py` - Unit tests for help tools
+- `src/agentic_cba_indicators/tools/forestry.py` - 4 GFW tools
+- `tests/test_tools_forestry.py` - 35 tests
+- Updated `tools/__init__.py` - Exports for new tools
+- `docs/dev/plan-gfw-forestry-tools.md` - Implementation plan
 
 ## Design Decisions
-- Help tools use `_active_tools` registry pattern (set at CLI startup)
-- Help tools NOT in `REDUCED_TOOLS`/`FULL_TOOLS` or `__all__` (internal-only)
-- Agent tool list includes help tools; user-facing banner shows original count
-- Soft acknowledgment allowed: "I consulted internal tool docs"
+- Focus on state monitoring, not real-time alerts
+- 5/10 year windows for trend analysis (M&E standards)
+- 30% canopy threshold (GFW default)
+- On-the-fly geostore creation (no caching)
+- Uses require_api_key("gfw") for authentication
 
 ## Next Steps
-- Monitor agent usage of help tools in production
-- Consider additional internal tools if needed
-- Plan for documentation updates
+- Consider additional data sources from External Data Source Integration Plan
+- Monitor tool usage with real GFW API key
+- Consider adding geostore caching if performance becomes issue
