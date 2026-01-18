@@ -24,6 +24,7 @@ Collections created:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,10 +50,19 @@ class IngestionSummary(TypedDict):
 
 # Add src to path for agentic_cba_indicators imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+from agentic_cba_indicators.config._secrets import get_api_key
 from agentic_cba_indicators.paths import get_kb_path
+from agentic_cba_indicators.tools._crossref import (
+    CrossRefMetadata,
+    fetch_crossref_batch,
+)
 from agentic_cba_indicators.tools._embedding import (
     EMBEDDING_MODEL,
     get_embeddings_batch,
+)
+from agentic_cba_indicators.tools._unpaywall import (
+    UnpaywallMetadata,
+    fetch_unpaywall_metadata,
 )
 
 # =============================================================================
@@ -138,6 +148,313 @@ CRITERIA_COLUMNS = {
     "7.3": "7.3. Harness local context, culture, and knowledge",
     "7.4": "7.4 Enhance multi-level compliance",
 }
+
+
+# =============================================================================
+# DOI Normalization (ISO 26324 / DOI Handbook)
+# =============================================================================
+
+# DOI regex: matches 10.XXXX/anything format per DOI Handbook
+# Prefix must be 4+ digits after "10.", suffix can contain any printable chars
+DOI_PATTERN = re.compile(
+    r"""
+    (?:https?://)?           # Optional https:// or http://
+    (?:dx\.)?                # Optional legacy dx. prefix
+    (?:doi\.org/)?           # Optional doi.org/
+    (10\.\d{4,}/[^\s\]\)]+)  # Capture: 10.XXXX/identifier (4+ digit prefix)
+    """,
+    re.VERBOSE | re.IGNORECASE,
+)
+
+
+def normalize_doi(raw: str) -> str | None:
+    """
+    Normalize a DOI to canonical lowercase form.
+
+    Handles various input formats per DOI Handbook (ISO 26324):
+    - "10.1234/abc"
+    - "doi: 10.1234/abc"
+    - "https://doi.org/10.1234/ABC"
+    - "http://dx.doi.org/10.1234/abc"
+    - "DOI:10.1234/abc" (no space)
+
+    Args:
+        raw: Raw DOI string in any common format
+
+    Returns:
+        Normalized DOI (e.g., "10.1234/abc") or None if invalid
+    """
+    if not raw:
+        return None
+
+    # Strip whitespace
+    raw = raw.strip()
+
+    # Remove common "doi:" prefix (case-insensitive)
+    raw = re.sub(r"^doi:\s*", "", raw, flags=re.IGNORECASE)
+
+    # Try to match DOI pattern
+    match = DOI_PATTERN.search(raw)
+    if match:
+        # Return lowercase canonical form (DOIs are case-insensitive per spec)
+        return match.group(1).lower()
+
+    return None
+
+
+def extract_doi_from_text(text: str) -> str | None:
+    """
+    Extract DOI embedded in citation text.
+
+    Args:
+        text: Citation text that may contain an embedded DOI
+
+    Returns:
+        Normalized DOI if found, None otherwise
+    """
+    if not text:
+        return None
+    match = DOI_PATTERN.search(text)
+    if match:
+        return match.group(1).lower()
+    return None
+
+
+def clean_citation_text(text: str) -> str:
+    """
+    Remove DOI patterns and clean up citation text.
+
+    Args:
+        text: Citation text potentially containing DOI
+
+    Returns:
+        Cleaned text with DOI removed and whitespace normalized
+    """
+    if not text:
+        return ""
+
+    # Remove [DOI: ...] patterns
+    text = re.sub(r"\[DOI:\s*[^\]]+\]", "", text)
+
+    # Remove standalone DOI URLs/patterns
+    text = DOI_PATTERN.sub("", text)
+
+    # Clean up whitespace (collapse multiple spaces, strip)
+    text = " ".join(text.split())
+
+    return text.strip()
+
+
+def doi_to_url(doi: str) -> str:
+    """
+    Convert normalized DOI to canonical HTTPS URL.
+
+    Args:
+        doi: Normalized DOI (e.g., "10.1234/abc")
+
+    Returns:
+        Canonical URL (e.g., "https://doi.org/10.1234/abc")
+    """
+    return f"https://doi.org/{doi}"
+
+
+# =============================================================================
+# Citation Data Structure
+# =============================================================================
+
+
+@dataclass
+class Citation:
+    """
+    Structured citation with normalized DOI and URL.
+
+    Separates semantic content (for embeddings) from display content (for users).
+    Supports optional enrichment from CrossRef and Unpaywall APIs.
+
+    Fields:
+        raw_text: Original text from Excel (for traceability)
+        text: Cleaned citation text (author, year, title)
+        doi: Normalized DOI (e.g., "10.1234/abc")
+        url: Canonical URL (e.g., "https://doi.org/10.1234/abc")
+        enriched_title: Full title from CrossRef
+        enriched_authors: Author list from CrossRef
+        enriched_journal: Journal name from CrossRef
+        enriched_year: Publication year from CrossRef
+        enriched_abstract: Abstract text from CrossRef
+        enrichment_source: API source ("crossref", "openalex", etc.)
+        is_oa: Whether article is Open Access (from Unpaywall)
+        oa_status: OA type - "gold", "green", "hybrid", "bronze", "closed"
+        pdf_url: Best available OA PDF URL
+        license: Open license type (e.g., "CC-BY", "CC-BY-NC")
+        version: Article version (publishedVersion, acceptedVersion, submittedVersion)
+        host_type: OA location type ("publisher", "repository")
+    """
+
+    raw_text: str  # Original text from Excel (for traceability)
+    text: str  # Cleaned citation text (author, year, title)
+    doi: str | None = None  # Normalized DOI (e.g., "10.1234/abc")
+    url: str | None = None  # Canonical URL (e.g., "https://doi.org/10.1234/abc")
+
+    # Enrichment fields (from CrossRef API)
+    enriched_title: str | None = None
+    enriched_authors: list[str] = field(default_factory=list)
+    enriched_journal: str | None = None
+    enriched_year: int | None = None
+    enriched_abstract: str | None = None
+    enrichment_source: str | None = None  # "crossref", "openalex", etc.
+
+    # Open Access metadata (from Unpaywall API)
+    is_oa: bool = False
+    oa_status: str | None = None  # gold, green, hybrid, bronze, closed
+    pdf_url: str | None = None  # Best OA PDF location
+    license: str | None = None  # CC-BY, CC-BY-NC, etc.
+    version: str | None = None  # publishedVersion, acceptedVersion, submittedVersion
+    host_type: str | None = None  # publisher, repository
+
+    @classmethod
+    def from_raw(cls, cite_text: str, doi_text: str = "") -> Citation:
+        """
+        Parse raw citation and DOI strings into structured Citation.
+
+        Args:
+            cite_text: Citation text from Excel (may contain embedded DOI)
+            doi_text: Explicit DOI from DOI column (may be empty)
+
+        Returns:
+            Citation with normalized DOI and generated URL
+        """
+        raw = f"{cite_text} {doi_text}".strip()
+
+        # Normalize DOI: prefer explicit DOI column, fall back to embedded
+        doi = normalize_doi(doi_text) or extract_doi_from_text(cite_text)
+
+        # Clean citation text (remove embedded DOI if we extracted it)
+        text = clean_citation_text(cite_text)
+
+        # Generate URL for valid DOIs
+        url = doi_to_url(doi) if doi else None
+
+        return cls(raw_text=raw, text=text, doi=doi, url=url)
+
+    def to_embed_string(self) -> str:
+        """
+        Format for embedding (minimal, semantic content only).
+
+        If enriched, uses enriched metadata for richer semantic matching.
+        Includes license info if OA.
+        Returns text without DOI or URL to avoid polluting semantic search.
+        """
+        if self.enrichment_source and self.enriched_title:
+            # Use enriched data for better embeddings
+            parts = []
+            if self.enriched_title:
+                parts.append(self.enriched_title)
+            if self.enriched_journal:
+                parts.append(self.enriched_journal)
+            if self.enriched_abstract:
+                # Truncate abstract to avoid overly long embeddings
+                abstract = self.enriched_abstract[:500]
+                parts.append(abstract)
+            # Include license for OA content (helps semantic matching)
+            if self.is_oa and self.license:
+                parts.append(f"License: {self.license}")
+            return " | ".join(parts) if parts else self.text
+        return self.text
+
+    def to_display_string(self) -> str:
+        """
+        Format for display to user (includes URL if available).
+
+        If enriched, shows formatted citation with full metadata.
+        Shows OA badge and PDF link if Open Access.
+        Returns text with clickable DOI URL when available.
+        """
+        if self.enrichment_source and self.enriched_title:
+            # Use enriched format
+            parts = []
+
+            # Authors
+            if self.enriched_authors:
+                if len(self.enriched_authors) <= 3:
+                    parts.append(", ".join(self.enriched_authors))
+                else:
+                    parts.append(f"{self.enriched_authors[0]} et al.")
+
+            # Year
+            if self.enriched_year:
+                parts.append(f"({self.enriched_year})")
+
+            # Title
+            if self.enriched_title:
+                title = (
+                    self.enriched_title[:150] + "..."
+                    if len(self.enriched_title) > 150
+                    else self.enriched_title
+                )
+                parts.append(f'"{title}"')
+
+            # Journal
+            if self.enriched_journal:
+                parts.append(f"*{self.enriched_journal}*")
+
+            # URL
+            if self.url:
+                parts.append(self.url)
+
+            # OA badge and PDF link
+            if self.is_oa and self.pdf_url:
+                parts.append(f"🔓 [PDF]({self.pdf_url})")
+            elif self.is_oa:
+                parts.append("🔓 OA")
+
+            return " ".join(parts) if parts else self.text
+
+        # Fallback to basic format
+        base_text = self.text
+
+        # Add URL
+        if self.url:
+            base_text = f"{base_text} [{self.url}]"
+        elif self.doi:
+            base_text = f"{base_text} [DOI: {self.doi}]"
+
+        # Add OA badge if available
+        if self.is_oa and self.pdf_url:
+            base_text = f"{base_text} 🔓 [PDF]({self.pdf_url})"
+        elif self.is_oa:
+            base_text = f"{base_text} 🔓 OA"
+
+        return base_text
+
+    def enrich_from_crossref(self, metadata: CrossRefMetadata) -> None:
+        """
+        Populate enrichment fields from CrossRef API response.
+
+        Args:
+            metadata: CrossRefMetadata from fetch_crossref_metadata()
+        """
+        self.enriched_title = metadata.title
+        self.enriched_authors = metadata.authors.copy() if metadata.authors else []
+        self.enriched_journal = metadata.journal
+        self.enriched_year = metadata.year
+        self.enriched_abstract = metadata.abstract
+        self.enrichment_source = "crossref"
+
+    def enrich_from_unpaywall(self, metadata: UnpaywallMetadata | None) -> None:
+        """
+        Populate Open Access fields from Unpaywall API response.
+
+        Args:
+            metadata: UnpaywallMetadata from fetch_unpaywall_metadata(), or None
+        """
+        if metadata is None:
+            return
+        self.is_oa = metadata.is_oa
+        self.oa_status = metadata.oa_status
+        self.pdf_url = metadata.pdf_url
+        self.license = metadata.license
+        self.version = metadata.version
+        self.host_type = metadata.host_type
 
 
 @dataclass
@@ -259,10 +576,14 @@ class MethodDoc:
     accuracy: str
     ease: str
     cost: str
-    citations: list[str] = field(default_factory=list)
+    citations: list[Citation] = field(default_factory=list)
 
     def to_text(self) -> str:
-        """Generate text for a single method."""
+        """
+        Generate text for embedding (semantic content only).
+
+        Citations use to_embed_string() to avoid DOI/URL noise in embeddings.
+        """
         parts = []
 
         if self.method_general:
@@ -283,8 +604,44 @@ class MethodDoc:
         if eval_parts:
             parts.append(f"Evaluation: {', '.join(eval_parts)}")
 
+        # Use embed format for citations (text only, no DOI/URL)
         if self.citations:
-            parts.append(f"References: {'; '.join(self.citations)}")
+            cite_texts = [c.to_embed_string() for c in self.citations if c.text]
+            if cite_texts:
+                parts.append(f"References: {'; '.join(cite_texts)}")
+
+        return "\n".join(parts)
+
+    def to_display_text(self) -> str:
+        """
+        Generate text for display to user (includes URLs).
+
+        Citations use to_display_string() to provide clickable DOI links.
+        """
+        parts = []
+
+        if self.method_general:
+            parts.append(f"Method (General): {self.method_general}")
+        if self.method_specific:
+            parts.append(f"Method (Specific): {self.method_specific}")
+        if self.notes:
+            parts.append(f"Notes: {self.notes}")
+
+        eval_parts = []
+        if self.accuracy:
+            eval_parts.append(f"Accuracy: {self.accuracy}")
+        if self.ease:
+            eval_parts.append(f"Ease: {self.ease}")
+        if self.cost:
+            eval_parts.append(f"Cost: {self.cost}")
+
+        if eval_parts:
+            parts.append(f"Evaluation: {', '.join(eval_parts)}")
+
+        # Use display format for citations (with URLs)
+        if self.citations:
+            parts.append("References:")
+            parts.extend(f"  - {c.to_display_string()}" for c in self.citations)
 
         return "\n".join(parts)
 
@@ -323,11 +680,25 @@ class MethodsGroupDoc:
         return "\n".join(parts)
 
     def to_metadata(self) -> dict:
-        """Generate metadata for filtering."""
+        """Generate metadata for filtering, including citation statistics."""
+        import json
+
         # Collect unique accuracy/ease/cost levels across all methods
         accuracies = list({m.accuracy for m in self.methods if m.accuracy})
         eases = list({m.ease for m in self.methods if m.ease})
         costs = list({m.cost for m in self.methods if m.cost})
+
+        # Collect citation statistics
+        all_dois: list[str] = []
+        total_citations = 0
+        oa_count = 0
+        for method in self.methods:
+            total_citations += len(method.citations)
+            for cite in method.citations:
+                if cite.doi and cite.doi not in all_dois:
+                    all_dois.append(cite.doi)
+                if cite.is_oa:
+                    oa_count += 1
 
         return {
             "indicator_id": self.indicator_id,
@@ -337,6 +708,13 @@ class MethodsGroupDoc:
             "has_high_accuracy": "High" in accuracies,
             "has_low_cost": "Low" in costs,
             "has_high_ease": "High" in eases,
+            # Citation metadata
+            "citation_count": total_citations,
+            "doi_count": len(all_dois),
+            "dois_json": json.dumps(all_dois),
+            # Open Access metadata
+            "oa_count": oa_count,
+            "has_oa_citations": oa_count > 0,
         }
 
 
@@ -370,11 +748,25 @@ def safe_int(value, default: int = 0) -> int:
         return default
 
 
-def extract_citations(row: pd.Series) -> list[str]:
-    """Extract and clean citations from row, including unnamed spillover columns."""
-    citations = []
+def extract_citations(row: pd.Series) -> list[Citation]:
+    """
+    Extract and normalize citations from row, including unnamed spillover columns.
 
-    # Standard citation columns
+    Uses Citation.from_raw() to:
+    - Normalize DOIs to canonical lowercase form
+    - Extract DOIs embedded in citation text
+    - Generate canonical https://doi.org URLs
+    - Clean citation text for embedding
+
+    Args:
+        row: pandas Series containing citation and DOI columns
+
+    Returns:
+        List of Citation objects with normalized DOIs and URLs
+    """
+    citations: list[Citation] = []
+
+    # Standard citation columns (DOI + Citation pairs)
     for i in range(1, 6):
         doi_col = "DOI" if i == 1 else f"DOI.{i}"
         cite_col = "Citation" if i == 1 else f"Citation.{i}"
@@ -383,18 +775,18 @@ def extract_citations(row: pd.Series) -> list[str]:
         cite = safe_str(row.get(cite_col, ""))
 
         if cite or doi:
-            if cite and doi:
-                citations.append(f"{cite} [DOI: {doi}]")
-            elif cite:
-                citations.append(cite)
-            elif doi:
-                citations.append(f"[DOI: {doi}]")
+            citations.append(Citation.from_raw(cite, doi))
 
     # Handle unnamed spillover columns (32, 33)
+    # These may contain either citations or DOIs
     for col in ["Unnamed: 32", "Unnamed: 33"]:
         spillover = safe_str(row.get(col, ""))
         if spillover and len(spillover) > 5:  # Avoid noise
-            citations.append(spillover)
+            # Check if it looks like a DOI (has 10. prefix)
+            if DOI_PATTERN.search(spillover):
+                citations.append(Citation.from_raw("", spillover))
+            else:
+                citations.append(Citation.from_raw(spillover, ""))
 
     return citations
 
@@ -602,7 +994,9 @@ def upsert_indicators(
         filtered_embeddings.append(embedding)
 
     if failed_ids:
-        print(f"  ⚠ Skipping {len(failed_ids)} indicators due to embedding failures")
+        print(
+            f"  WARNING: Skipping {len(failed_ids)} indicators due to embedding failures"
+        )
 
     print("  Upserting to 'indicators' collection...")
     collection.upsert(
@@ -661,7 +1055,9 @@ def upsert_methods(
         filtered_embeddings.append(embedding)
 
     if failed_ids:
-        print(f"  ⚠ Skipping {len(failed_ids)} method groups due to embedding failures")
+        print(
+            f"  WARNING: Skipping {len(failed_ids)} method groups due to embedding failures"
+        )
 
     print("  Upserting to 'methods' collection...")
     collection.upsert(
@@ -679,15 +1075,55 @@ def upsert_methods(
 # =============================================================================
 
 
+def collect_all_dois(methods_by_indicator: dict[int, list[MethodDoc]]) -> list[str]:
+    """Collect all unique DOIs from method documents."""
+    unique_dois: set[str] = set()
+    for methods in methods_by_indicator.values():
+        for method in methods:
+            for cite in method.citations:
+                if cite.doi:
+                    unique_dois.add(cite.doi)
+    return sorted(unique_dois)
+
+
+def apply_enrichment(
+    methods_by_indicator: dict[int, list[MethodDoc]],
+    enrichment_data: dict[str, CrossRefMetadata | None],
+) -> int:
+    """Apply enrichment data to all citations in method documents.
+
+    Returns count of citations enriched.
+    """
+    enriched_count = 0
+    for methods in methods_by_indicator.values():
+        for method in methods:
+            for cite in method.citations:
+                if cite.doi and cite.doi in enrichment_data:
+                    meta = enrichment_data[cite.doi]
+                    if meta:
+                        cite.enrich_from_crossref(meta)
+                        enriched_count += 1
+    return enriched_count
+
+
 def ingest(
     excel_file: Path,
     clear: bool = False,
     verbose: bool = False,
     dry_run: bool = False,
     strict: bool = False,
+    enrich: bool = False,
 ) -> IngestionSummary:
     """
     Main ingestion function.
+
+    Args:
+        excel_file: Path to the Excel file
+        clear: Clear existing collections before ingesting
+        verbose: Enable verbose output
+        dry_run: Preview without making changes
+        strict: Fail on any embedding error
+        enrich: Fetch DOI metadata from CrossRef API
 
     Returns:
         Summary dict with counts and any issues found.
@@ -706,10 +1142,10 @@ def ingest(
         try:
             test_emb = get_embeddings_batch(["test"], strict=True)
             emb_dim = len(test_emb[0]) if test_emb[0] is not None else 0
-            print(f"  ✓ Ollama ready (embedding dim: {emb_dim})")
+            print(f"  OK: Ollama ready (embedding dim: {emb_dim})")
         except Exception as e:
             summary["errors"].append(f"Ollama connection failed: {e}")
-            print(f"  ✗ Ollama error: {e}")
+            print(f"  ERROR: Ollama error: {e}")
             print("  Make sure Ollama is running: ollama serve")
             print(f"  And the model is pulled: ollama pull {EMBEDDING_MODEL}")
             return summary
@@ -722,7 +1158,7 @@ def ingest(
         print("  Clearing existing collections...")
         for coll in client.list_collections():
             client.delete_collection(coll.name)
-        print("  ✓ Collections cleared")
+        print("  OK: Collections cleared")
 
     # Step 3: Load workbook
     print(f"\nLoading workbook: {excel_file}")
@@ -742,6 +1178,41 @@ def ingest(
     print(f"  Loaded {len(indicators)} indicators")
     print(f"  Loaded methods for {len(methods_by_indicator)} indicators")
 
+    # Step 4.5: Optionally enrich citations with CrossRef metadata
+    if enrich and not dry_run:
+        all_dois = collect_all_dois(methods_by_indicator)
+        if all_dois:
+            print(f"\nEnriching {len(all_dois)} DOIs from CrossRef...")
+            crossref_email = get_api_key("crossref")
+            if not crossref_email:
+                print("  TIP: Set CROSSREF_EMAIL for faster rates (polite pool)")
+
+            # Progress callback for verbose mode
+            enrichment_count = 0
+
+            def progress_cb(i: int, total: int, doi: str, found: bool) -> None:
+                nonlocal enrichment_count
+                if found:
+                    enrichment_count += 1
+                if verbose:
+                    status = "OK" if found else "--"
+                    print(f"  [{i}/{total}] {status} {doi}")
+                elif i % 20 == 0 or i == total:
+                    print(f"  Progress: {i}/{total} DOIs ({enrichment_count} found)")
+
+            # Fetch metadata from CrossRef
+            enrichment_data = fetch_crossref_batch(
+                all_dois, progress_callback=progress_cb
+            )
+
+            # Apply enrichment to citation objects
+            citations_enriched = apply_enrichment(methods_by_indicator, enrichment_data)
+            print(
+                f"  OK: Enriched {citations_enriched} citations with CrossRef metadata"
+            )
+        else:
+            print("\n  No DOIs found to enrich")
+
     # Step 5: Build grouped method documents
     print("\nBuilding RAG documents...")
     methods_groups, missing_methods = build_methods_group_docs(
@@ -750,7 +1221,7 @@ def ingest(
 
     summary["missing_methods_indicator_ids"] = missing_methods
     if missing_methods:
-        print(f"  ⚠ Indicators with no methods: {missing_methods}")
+        print(f"  WARNING: Indicators with no methods: {missing_methods}")
 
     total_methods = sum(len(mg.methods) for mg in methods_groups)
     print(f"  Built {len(indicators)} indicator documents")
@@ -791,6 +1262,296 @@ def ingest(
     return summary
 
 
+def enrich_dois_batch(
+    citations: list[Citation],
+    preview_only: bool = False,
+    verbose: bool = False,
+) -> tuple[int, int, int]:
+    """
+    Enrich citations with CrossRef + Unpaywall metadata in batch.
+
+    Fetches metadata from both APIs for each unique DOI:
+    1. CrossRef - title, authors, journal, year, abstract
+    2. Unpaywall - OA status, PDF URL, license
+
+    Rate limited with 0.1s delay between DOIs.
+
+    Args:
+        citations: List of Citation objects to enrich
+        preview_only: If True, only show stats without modifying citations
+        verbose: If True, show per-DOI progress
+
+    Returns:
+        Tuple of (crossref_found, unpaywall_found, total_enriched)
+    """
+    import time
+
+    # Collect unique DOIs
+    doi_to_citations: dict[str, list[Citation]] = {}
+    for cite in citations:
+        if cite.doi:
+            if cite.doi not in doi_to_citations:
+                doi_to_citations[cite.doi] = []
+            doi_to_citations[cite.doi].append(cite)
+
+    unique_dois = sorted(doi_to_citations.keys())
+    total_dois = len(unique_dois)
+
+    if total_dois == 0:
+        print("No DOIs found to enrich")
+        return (0, 0, 0)
+
+    print(f"Enriching {total_dois} unique DOIs via CrossRef + Unpaywall...")
+    if preview_only:
+        print("(Preview mode - citations will not be modified)")
+
+    crossref_found = 0
+    unpaywall_found = 0
+    total_enriched = 0
+
+    for i, doi in enumerate(unique_dois, 1):
+        # Progress logging every 10 DOIs
+        if verbose or i % 10 == 0 or i == 1 or i == total_dois:
+            print(f"  [{i}/{total_dois}] Processing DOI: {doi}")
+
+        enriched_this_doi = False
+
+        # CrossRef enrichment
+        if not preview_only:
+            from agentic_cba_indicators.tools._crossref import fetch_crossref_metadata
+
+            cf_meta = fetch_crossref_metadata(doi)
+            if cf_meta:
+                crossref_found += 1
+                for cite in doi_to_citations[doi]:
+                    cite.enrich_from_crossref(cf_meta)
+                enriched_this_doi = True
+                if verbose and cf_meta.title:
+                    print(f"    CrossRef: Found - {cf_meta.title[:60]}...")
+
+        # Unpaywall enrichment
+        if not preview_only:
+            uw_meta = fetch_unpaywall_metadata(doi)
+            if uw_meta:
+                unpaywall_found += 1
+                for cite in doi_to_citations[doi]:
+                    cite.enrich_from_unpaywall(uw_meta)
+                enriched_this_doi = True
+                if verbose and uw_meta.is_oa:
+                    print(
+                        f"    Unpaywall: OA ({uw_meta.oa_status}) - {uw_meta.pdf_url}"
+                    )
+
+        if enriched_this_doi:
+            total_enriched += 1
+
+        # Rate limiting: 0.1s delay between DOIs
+        if i < total_dois:
+            time.sleep(0.1)
+
+    print("\nEnrichment Results:")
+    print(
+        f"  CrossRef found: {crossref_found}/{total_dois} ({crossref_found / total_dois:.1%})"
+    )
+    print(
+        f"  Unpaywall found: {unpaywall_found}/{total_dois} ({unpaywall_found / total_dois:.1%})"
+    )
+    print(
+        f"  Total enriched: {total_enriched}/{total_dois} ({total_enriched / total_dois:.1%})"
+    )
+
+    return (crossref_found, unpaywall_found, total_enriched)
+
+
+def enrich_citations(
+    excel_file: Path, verbose: bool = False, limit: int | None = None
+) -> None:
+    """
+    Enrich DOI citations with metadata from CrossRef API.
+
+    Fetches title, authors, journal, year, and abstract for each DOI found
+    in the Methods sheet. Results are displayed (not saved to KB).
+
+    To save enriched citations to KB, run regular ingestion after enrichment
+    data has been cached (future improvement).
+
+    Args:
+        excel_file: Path to the Excel file
+        verbose: If True, show individual citation details
+        limit: Max DOIs to fetch (for testing). None = all DOIs.
+    """
+    print("=" * 60)
+    print("Citation Enrichment via CrossRef API")
+    print("=" * 60)
+    print(f"Source: {excel_file}")
+    print()
+
+    if not excel_file.exists():
+        print(f"Error: File not found: {excel_file}")
+        return
+
+    # Load methods sheet and collect citations
+    df = pd.read_excel(excel_file, sheet_name="Methods")
+    all_citations: list[Citation] = []
+
+    for _, row in df.iterrows():
+        indicator_id = safe_int(row.get("id"))
+        if indicator_id == 0:
+            continue
+        citations = extract_citations(row)
+        all_citations.extend(citations)
+
+    # Limit if requested
+    if limit:
+        all_citations = all_citations[:limit]
+
+    # Run batch enrichment (CrossRef only)
+    enrich_dois_batch(all_citations, preview_only=True, verbose=verbose)
+
+
+def preview_oa_coverage(
+    excel_file: Path, verbose: bool = False, limit: int | None = None
+) -> None:
+    """
+    Preview Open Access coverage for DOIs via Unpaywall API.
+
+    Shows OA stats without modifying the knowledge base.
+
+    Args:
+        excel_file: Path to the Excel file
+        verbose: If True, show individual DOI details
+        limit: Max DOIs to check (for testing). None = all DOIs.
+    """
+    print("=" * 60)
+    print("Open Access Coverage via Unpaywall API")
+    print("=" * 60)
+    print(f"Source: {excel_file}")
+    print()
+
+    if not excel_file.exists():
+        print(f"Error: File not found: {excel_file}")
+        return
+
+    # Load methods sheet and collect citations
+    df = pd.read_excel(excel_file, sheet_name="Methods")
+    all_citations: list[Citation] = []
+
+    for _, row in df.iterrows():
+        indicator_id = safe_int(row.get("id"))
+        if indicator_id == 0:
+            continue
+        citations = extract_citations(row)
+        all_citations.extend(citations)
+
+    # Limit if requested
+    if limit:
+        all_citations = all_citations[:limit]
+
+    # Run batch enrichment (both APIs)
+    _crossref_found, _unpaywall_found, _total_enriched = enrich_dois_batch(
+        all_citations, preview_only=False, verbose=verbose
+    )
+
+    # Calculate OA stats
+    oa_count = sum(1 for c in all_citations if c.is_oa)
+    total_citations = len(all_citations)
+
+    print("\nOpen Access Statistics:")
+    print(f"  Total citations: {total_citations}")
+    print(f"  OA citations: {oa_count} ({oa_count / total_citations:.1%})")
+
+    # Breakdown by OA status
+    from collections import Counter
+
+    oa_statuses = Counter(c.oa_status for c in all_citations if c.is_oa)
+    if oa_statuses:
+        print("\nOA Status Breakdown:")
+        for status, count in oa_statuses.most_common():
+            print(f"    {status}: {count}")
+
+
+def preview_citations(excel_file: Path, verbose: bool = False) -> None:
+    """
+    Preview citation normalization without modifying KB.
+
+    Shows statistics about DOI extraction and normalization to validate
+    the citation parsing before running a full ingestion.
+
+    Args:
+        excel_file: Path to the Excel file
+        verbose: If True, show individual citation details
+    """
+    print("=" * 60)
+    print("Citation Normalization Preview")
+    print("=" * 60)
+    print(f"Source: {excel_file}")
+    print()
+
+    if not excel_file.exists():
+        print(f"Error: File not found: {excel_file}")
+        return
+
+    # Load methods sheet
+    df = pd.read_excel(excel_file, sheet_name="Methods")
+
+    total_citations = 0
+    with_doi = 0
+    without_doi = 0
+    doi_from_text = 0  # DOIs extracted from citation text (not DOI column)
+
+    # Sample citations for verbose output
+    sample_citations: list[tuple[int, Citation]] = []
+
+    for _, row in df.iterrows():
+        indicator_id = safe_int(row.get("id"))
+        if indicator_id == 0:
+            continue
+
+        citations = extract_citations(row)
+        for cite in citations:
+            total_citations += 1
+
+            if cite.doi:
+                with_doi += 1
+                # Check if DOI was extracted from text (not explicit column)
+                raw_doi_cols = [
+                    safe_str(row.get(col, ""))
+                    for col in ["DOI", "DOI.2", "DOI.3", "DOI.4", "DOI.5"]
+                ]
+                if cite.doi and not any(
+                    normalize_doi(d) == cite.doi for d in raw_doi_cols
+                ):
+                    doi_from_text += 1
+            else:
+                without_doi += 1
+
+            # Collect samples for verbose output
+            if verbose and len(sample_citations) < 10:
+                sample_citations.append((indicator_id, cite))
+
+    # Print statistics
+    print("=== Summary ===")
+    print(f"Total citations: {total_citations}")
+    print(f"With DOI: {with_doi} ({100 * with_doi / max(1, total_citations):.1f}%)")
+    pct_no_doi = 100 * without_doi / max(1, total_citations)
+    print(f"Without DOI: {without_doi} ({pct_no_doi:.1f}%)")
+    pct_from_text = 100 * doi_from_text / max(1, total_citations)
+    print(f"DOI extracted from text: {doi_from_text} ({pct_from_text:.1f}%)")
+
+    if verbose and sample_citations:
+        print("\n=== Sample Citations ===")
+        for indicator_id, cite in sample_citations:
+            print(f"\nIndicator {indicator_id}:")
+            raw_trunc = cite.raw_text[:80] + ("..." if len(cite.raw_text) > 80 else "")
+            print(f"  Raw: {raw_trunc}")
+            txt_trunc = cite.text[:60] + ("..." if len(cite.text) > 60 else "")
+            print(f"  Text: {txt_trunc}")
+            print(f"  DOI: {cite.doi or 'None'}")
+            print(f"  URL: {cite.url or 'None'}")
+
+    print("\nOK: Preview complete (no changes made to KB)")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Deterministic ingestion of CBA ME Indicators into ChromaDB",
@@ -801,6 +1562,9 @@ Examples:
     python scripts/ingest_excel.py --clear            # Clear and rebuild
     python scripts/ingest_excel.py --dry-run          # Preview without changes
     python scripts/ingest_excel.py --verbose          # Detailed output
+    python scripts/ingest_excel.py --preview-citations # Preview DOI normalization
+    python scripts/ingest_excel.py --enrich-citations  # Fetch metadata from CrossRef
+    python scripts/ingest_excel.py --enrich-citations --limit 10  # Test with 10 DOIs
         """,
     )
     parser.add_argument(
@@ -833,7 +1597,48 @@ Examples:
         action="store_true",
         help="Fail ingestion on any embedding error",
     )
+    parser.add_argument(
+        "--preview-citations",
+        action="store_true",
+        help="Preview citation normalization without modifying KB",
+    )
+    parser.add_argument(
+        "--enrich-citations",
+        action="store_true",
+        help="Fetch DOI metadata from CrossRef API (preview only)",
+    )
+    parser.add_argument(
+        "--enrich",
+        action="store_true",
+        help="Fetch DOI metadata from CrossRef during ingestion",
+    )
+    parser.add_argument(
+        "--preview-oa",
+        action="store_true",
+        help="Preview Open Access coverage via Unpaywall without modifying KB",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit number of DOIs to enrich (for testing)",
+    )
     args = parser.parse_args()
+
+    # Handle --preview-citations early exit
+    if args.preview_citations:
+        preview_citations(args.file, args.verbose)
+        sys.exit(0)
+
+    # Handle --preview-oa early exit
+    if args.preview_oa:
+        preview_oa_coverage(args.file, args.verbose, args.limit)
+        sys.exit(0)
+
+    # Handle --enrich-citations early exit
+    if args.enrich_citations:
+        enrich_citations(args.file, args.verbose, args.limit)
+        sys.exit(0)
 
     if not args.file.exists():
         print(f"Error: File not found: {args.file}")
@@ -854,6 +1659,7 @@ Examples:
         verbose=args.verbose,
         dry_run=args.dry_run,
         strict=args.strict,
+        enrich=args.enrich,
     )
 
     # Print summary
@@ -873,7 +1679,7 @@ Examples:
             print(f"  - {err}")
         sys.exit(1)
 
-    print(f"\n✓ Knowledge base ready at: {KB_PATH}")
+    print(f"\nOK: Knowledge base ready at: {KB_PATH}")
 
 
 if __name__ == "__main__":

@@ -2,13 +2,38 @@
 
 ## In Progress
 
-(None)
-
 ## Pending
 
-(None)
+### Unpaywall + CrossRef OA Enrichment (TASK062-TASK076)
+- [TASK062] Migrate CrossRef to secrets and add Unpaywall - Secrets integration for both APIs ✅
+- [TASK063] Create _unpaywall.py module - OA metadata dataclass and fetch function ✅
+- [TASK064] Add OA fields to Citation class - is_oa, oa_status, pdf_url, license, version, host_type ✅
+- [TASK065] Add enrich_from_unpaywall() method - Citation enrichment from Unpaywall ✅
+- [TASK066] Create enrich_dois_batch() function - Dual-API batch enrichment ✅
+- [TASK067] Add --preview-oa CLI flag - Preview OA coverage before ingestion ✅
+- [TASK068] Add OA metadata to ChromaDB - oa_count, has_oa_citations fields ✅
+- [TASK069] Add OA stats to list_knowledge_base_stats() - Display OA metrics ✅
+- [TASK070] Add oa_only filter to search_methods() - Filter by OA availability ✅
+- [TASK071] Add PDF links to export_indicator_selection() - PDF links in exports ✅
+- [TASK072] Create test_unpaywall.py - 9 tests for Unpaywall module ✅
+- [TASK073] Add OA enrichment tests to test_ingest_excel.py - 8 tests for ingestion ✅
+- [TASK074] Fix all pre-commit/pyright/test issues - All 212 tests passing ✅
+- [TASK075] Update techContext.md with Unpaywall API - API documentation ✅
+- [TASK076] Update Memory Bank with OA completion - Progress and context updates ✅
 
 ## Completed
+
+### Citation Normalization Implementation - COMPLETE (TASK021, TASK053-TASK061)
+- [TASK021] Citation Normalization & Embedding Model Strategy - Strategy + full implementation ✅
+- [TASK053] DOI normalization functions - DOI_PATTERN, normalize_doi(), extract_doi_from_text() ✅
+- [TASK054] Citation dataclass - from_raw(), to_embed_string(), to_display_string() ✅
+- [TASK055] Update MethodDoc for Citation type - list[Citation], to_display_text() ✅
+- [TASK056] Integrate citations into pipeline - extract_citations() returns list[Citation] ✅
+- [TASK057] Preview citations CLI flag - --preview-citations (85.9% DOI rate) ✅
+- [TASK058] Citation metadata in ChromaDB - citation_count, doi_count, dois_json ✅
+- [TASK059] Citation normalization tests - 49 tests covering all DOI functions ✅
+- [TASK060] KB rebuild validation - 224/223/801 counts, 196 tests pass ✅
+- [TASK061] Embedding dimension awareness - EMBEDDING_DIMENSIONS dict, migration docs ✅
 
 ### GFW Forestry Tools Implementation - COMPLETE (TASK042-TASK052)
 - [TASK042] Create GFW API request helper - Created _gfw_get(), _gfw_post() ✅

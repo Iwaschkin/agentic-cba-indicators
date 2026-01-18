@@ -28,6 +28,28 @@ OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")  # Optional, for Ollama Cloud
 EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
 
+# Expected embedding dimensions by model (for validation and migration planning)
+# Add new models here when evaluating alternatives
+EMBEDDING_DIMENSIONS: dict[str, int] = {
+    "nomic-embed-text": 768,
+    "mxbai-embed-large": 1024,
+    "snowflake-arctic-embed:335m": 1024,
+    "qwen3-embedding:0.6b": 1024,
+    "embeddinggemma": 768,
+    "all-minilm:33m": 384,
+}
+
+
+def get_expected_dimensions() -> int:
+    """
+    Get expected embedding dimensions for the currently configured model.
+
+    Returns:
+        Expected dimension count for EMBEDDING_MODEL, or 768 as default
+    """
+    return EMBEDDING_DIMENSIONS.get(EMBEDDING_MODEL, 768)
+
+
 # Rate limiting for embedding calls (prevents flooding Ollama)
 # Default: max 10 calls/second (0.1s between calls)
 _MIN_EMBEDDING_INTERVAL = float(os.environ.get("OLLAMA_MIN_INTERVAL", "0.1"))

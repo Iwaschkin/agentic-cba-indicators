@@ -195,7 +195,7 @@ def extract_pdf_text(pdf_path: Path) -> str:
         return ""
 
     with fitz.open(pdf_path) as doc:
-        text_parts = [page.get_text() for page in doc]
+        text_parts: list[str] = [str(page.get_text()) for page in doc]
 
     full_text = "\n".join(text_parts)
 

@@ -286,7 +286,9 @@ def search_indicators(
 
 
 @tool
-def search_methods(query: str, n_results: int = 5, min_similarity: float = 0.3) -> str:
+def search_methods(
+    query: str, n_results: int = 5, min_similarity: float = 0.3, oa_only: bool = False
+) -> str:
     """
     Search for measurement methods in the CBA ME knowledge base.
 
@@ -299,6 +301,7 @@ def search_methods(query: str, n_results: int = 5, min_similarity: float = 0.3) 
         query: Search query about measurement methods or techniques
         n_results: Number of results to return (default 5, max 20)
         min_similarity: Minimum similarity threshold (0.0-1.0, default 0.3)
+        oa_only: If True, only return indicators with Open Access citations
 
     Returns:
         Matching methods with evaluation criteria and citations
@@ -314,11 +317,16 @@ def search_methods(query: str, n_results: int = 5, min_similarity: float = 0.3) 
 
         query_embedding = _get_embedding(query)
 
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=n_results,
-            include=["documents", "metadatas", "distances"],
-        )
+        # Build query with optional OA filter
+        query_kwargs = {
+            "query_embeddings": [query_embedding],
+            "n_results": n_results,
+            "include": ["documents", "metadatas", "distances"],
+        }
+        if oa_only:
+            query_kwargs["where"] = {"has_oa_citations": True}
+
+        results = collection.query(**query_kwargs)
 
         docs = results.get("documents")
         metas = results.get("metadatas")
@@ -461,7 +469,7 @@ def list_knowledge_base_stats() -> str:
     Show statistics about the knowledge base contents.
 
     Returns:
-        Summary of indexed indicators and methods
+        Summary of indexed indicators, methods, and Open Access coverage
     """
     try:
         client = _get_chroma_client()
@@ -472,10 +480,43 @@ def list_knowledge_base_stats() -> str:
 
         output = ["=== Knowledge Base Statistics ===\n"]
 
+        # Collection counts
         for coll_info in collections:
             collection = client.get_collection(coll_info.name)
             output.append(f"Collection: {coll_info.name}")
             output.append(f"  Documents: {collection.count()}")
+
+        # Open Access statistics from methods collection
+        try:
+            methods_coll = client.get_collection("methods")
+            methods_data = methods_coll.get(include=["metadatas"])
+            metadatas = methods_data.get("metadatas") if methods_data else None
+            if metadatas:
+                total_oa = sum(
+                    cast("int", cast("dict[str, Any]", m).get("oa_count", 0))
+                    for m in metadatas
+                )
+                total_citations = sum(
+                    cast("int", cast("dict[str, Any]", m).get("citation_count", 0))
+                    for m in metadatas
+                )
+                indicators_with_oa = sum(
+                    1
+                    for m in metadatas
+                    if cast("dict[str, Any]", m).get("has_oa_citations")
+                )
+
+                if total_citations > 0:
+                    output.append("\nOpen Access Coverage:")
+                    output.append(f"  Total OA citations: {total_oa}")
+                    output.append(
+                        f"  Coverage: {total_oa}/{total_citations} ({total_oa / total_citations:.1%})"
+                    )
+                    output.append(
+                        f"  Indicators with OA: {indicators_with_oa}/{len(metadatas)}"
+                    )
+        except Exception:
+            pass  # OA stats optional if collection doesn't exist
 
         output.append(
             "\n\nUse search_indicators() or search_methods() to query the knowledge base."
@@ -1384,7 +1425,7 @@ def export_indicator_selection(
                         output.extend(f"- {note}" for note in quality_notes)
                         output.append("")
 
-                    # Parse and include top methods
+                    # Parse and include top methods with OA links
                     method_doc = method_docs[0]
                     method_sections = method_doc.split("--- Method ")
 
@@ -1392,15 +1433,39 @@ def export_indicator_selection(
                         lines = section.strip().split("\n")
                         output.append(f"**Method {lines[0].split(' ')[0]}**")
 
-                        output.extend(
-                            f"- {line}"
-                            for line in lines[1:]
+                        for line in lines[1:]:
                             if (
                                 line.startswith("Method (")
                                 or line.startswith("Notes:")
                                 or line.startswith("Evaluation:")
-                            )
-                        )
+                            ):
+                                output.append(f"- {line}")
+                            elif line.startswith("References:"):
+                                # Process references to add OA badges and PDF links
+                                refs_text = line.replace("References:", "").strip()
+                                if refs_text and refs_text != "None":
+                                    # Parse citations (semicolon-separated)
+                                    citations = [
+                                        c.strip() for c in refs_text.split(";")
+                                    ]
+                                    formatted_citations = []
+                                    for citation in citations:
+                                        if not citation:
+                                            continue
+                                        # Check for OA badge and PDF link patterns
+                                        if "🔓" in citation and "[PDF]" in citation:
+                                            # Already formatted with OA
+                                            formatted_citations.append(citation)
+                                        elif citation == "None" or citation == "N/A":
+                                            continue
+                                        else:
+                                            # Regular citation without OA
+                                            formatted_citations.append(citation)
+
+                                    if formatted_citations:
+                                        output.append(
+                                            f"- References: {'; '.join(formatted_citations)}"
+                                        )
 
                         output.append("")
 

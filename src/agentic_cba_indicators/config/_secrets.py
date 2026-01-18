@@ -21,6 +21,8 @@ SUPPORTED_KEYS: Final[dict[str, str]] = {
     "anthropic": "ANTHROPIC_API_KEY",  # Anthropic Claude
     "openai": "OPENAI_API_KEY",  # OpenAI
     "google": "GOOGLE_API_KEY",  # Google Gemini
+    "crossref": "CROSSREF_EMAIL",  # CrossRef API polite pool
+    "unpaywall": "UNPAYWALL_EMAIL",  # Unpaywall API
 }
 
 # Track whether we've attempted to load .env
