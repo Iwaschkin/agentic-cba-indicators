@@ -28,9 +28,10 @@ Store OA counts and flags in ChromaDB method group metadata for filtering.
 |----|-------------|--------|---------|-------|
 | 68.1 | Update _build_method_doc() | Complete | 2026-01-18 | Count OA citations |
 | 68.2 | Add fields to metadata dict | Complete | 2026-01-18 | oa_count, has_oa_citations |
-| 68.3 | Validate persistence | Not Started | - | Check _upsert_methods_collection |
-| 68.4 | Rebuild KB and verify | Not Started | - | Run ingestion with --enrich-oa |
+| 68.3 | Validate persistence | Complete | 2026-01-18 | Metadata persisted in methods collection |
+| 68.4 | Rebuild KB and verify | Complete | 2026-01-18 | Ingestion with OA enrichment verified |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- OA metadata persisted and verified via enriched KB rebuild

@@ -32,13 +32,14 @@ Add tests for OA enrichment functionality in ingestion pipeline.
 | 73.2 | Test OA display formatting | Complete | 2026-01-18 | 2 tests (badge, PDF link) |
 | 73.3 | Test MethodDoc OA fields | Complete | 2026-01-18 | 2 tests (count, display) |
 | 73.4 | Test MethodsGroupDoc OA | Complete | 2026-01-18 | 2 tests (aggregation) |
-| 73.1 | Test enrich_dois_batch() | Not Started | - | Mock both APIs |
-| 73.2 | Test Citation.enrich_from_unpaywall() | Not Started | - | Field population |
-| 73.3 | Test to_display_string() with OA | Not Started | - | Badge and PDF link |
-| 73.4 | Test to_embed_string() with license | Not Started | - | License inclusion |
-| 73.5 | Test metadata storage | Not Started | - | oa_count, has_oa_citations |
-| 73.6 | Run pytest | Not Started | - | All tests pass |
+| 73.1 | Test enrich_dois_batch() | Complete | 2026-01-18 | Mocked APIs |
+| 73.2 | Test Citation.enrich_from_unpaywall() | Complete | 2026-01-18 | Field population |
+| 73.3 | Test to_display_string() with OA | Complete | 2026-01-18 | Badge and PDF link |
+| 73.4 | Test to_embed_string() with license | Complete | 2026-01-18 | License inclusion |
+| 73.5 | Test metadata storage | Complete | 2026-01-18 | oa_count, has_oa_citations |
+| 73.6 | Run pytest | Complete | 2026-01-18 | All tests pass |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- Added OA enrichment tests for ingestion pipeline

@@ -28,9 +28,10 @@ Update Memory Bank files to reflect Unpaywall OA enrichment completion.
 |----|-------------|--------|---------|-------|
 | 76.1 | Update progress.md | Complete | 2026-01-18 | Added OA enrichment section |
 | 76.2 | Update activeContext.md | Complete | 2026-01-18 | Current focus and next steps |
-| 76.3 | Document deliverables | Not Started | - | Modules, tools, features |
-| 76.4 | Note Phase 2 possibilities | Not Started | - | PDF downloads, ingestion |
+| 76.3 | Document deliverables | Complete | 2026-01-18 | Modules and features recorded |
+| 76.4 | Note Phase 2 possibilities | Complete | 2026-01-18 | PDF download noted |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- Updated memory bank entries for OA enrichment

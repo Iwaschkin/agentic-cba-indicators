@@ -30,12 +30,13 @@ Add tests for OA features in knowledge base tools.
 |----|-------------|--------|---------|-------|
 | 74.1 | Fix pre-commit errors | Complete | 2026-01-18 | Fixed ruff, pyright errors |
 | 74.2 | Run full test suite | Complete | 2026-01-18 | All 212 tests passing |
-| 74.1 | Check/create test file | Not Started | - | Create if needed |
-| 74.2 | Test list_knowledge_base_stats() OA | Not Started | - | OA metrics display |
-| 74.3 | Test search_methods oa_only filter | Not Started | - | Result filtering |
-| 74.4 | Test export PDF links | Not Started | - | Markdown output |
-| 74.5 | Run pytest | Not Started | - | All tests pass |
+| 74.1 | Check/create test file | Complete | 2026-01-18 | Test coverage updated |
+| 74.2 | Test list_knowledge_base_stats() OA | Complete | 2026-01-18 | OA metrics verified |
+| 74.3 | Test search_methods oa_only filter | Complete | 2026-01-18 | Filtering verified |
+| 74.4 | Test export PDF links | Complete | 2026-01-18 | Markdown output verified |
+| 74.5 | Run pytest | Complete | 2026-01-18 | All tests pass |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- Added OA feature tests and validated

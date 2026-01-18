@@ -28,10 +28,11 @@ Include Open Access PDF links and badges in markdown export output.
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
 | 71.1 | Locate citation display in export | Complete | 2026-01-18 | Found References section in export |
-| 71.2 | Add OA badge logic | Not Started | - | 🔓 for is_oa=True |
-| 71.3 | Add PDF link logic | Not Started | - | [PDF](url) if pdf_url present |
-| 71.4 | Test export with OA citations | Not Started | - | Validate markdown rendering |
+| 71.2 | Add OA badge logic | Complete | 2026-01-18 | 🔓 badge added for OA citations |
+| 71.3 | Add PDF link logic | Complete | 2026-01-18 | PDF links included when available |
+| 71.4 | Test export with OA citations | Complete | 2026-01-18 | Markdown rendering verified |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- Added OA badges and PDF links to exports

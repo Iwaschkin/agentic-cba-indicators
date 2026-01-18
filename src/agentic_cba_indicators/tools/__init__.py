@@ -47,6 +47,7 @@ from .knowledge_base import (
     find_indicators_by_measurement_approach,
     find_indicators_by_principle,
     get_indicator_details,
+    get_knowledge_version,
     get_usecase_details,
     get_usecases_by_indicator,
     list_available_classes,
@@ -78,54 +79,42 @@ from .soilgrids import get_soil_carbon, get_soil_properties, get_soil_texture
 from .weather import get_current_weather, get_weather_forecast
 
 __all__ = [
-    # Tool sets
     "FULL_TOOLS",
     "REDUCED_TOOLS",
-    # Data tools
     "compare_commodity_producers",
     "compare_gender_gaps",
     "compare_indicators",
-    # Internal help tools
     "describe_tool",
     "export_indicator_selection",
     "find_feasible_methods",
     "find_indicators_by_class",
     "find_indicators_by_measurement_approach",
-    # Indicator Selection Tools
     "find_indicators_by_principle",
-    # Agricultural Climate (NASA POWER)
     "get_agricultural_climate",
     "get_biodiversity_summary",
     "get_climate_data",
-    # Commodity Markets (USDA FAS)
     "get_commodity_production",
     "get_commodity_trade",
-    # Socio-economic
     "get_country_indicators",
     "get_crop_production",
-    # Weather & Climate
     "get_current_weather",
     "get_employment_by_gender",
     "get_evapotranspiration",
-    # Forestry / Global Forest Watch
     "get_forest_carbon_stock",
     "get_forest_extent",
     "get_forest_statistics",
-    # Gender Statistics (World Bank)
     "get_gender_indicators",
     "get_gender_time_series",
     "get_historical_climate",
     "get_indicator_details",
-    # Labor Statistics (ILO)
+    "get_knowledge_version",
     "get_labor_indicators",
     "get_labor_time_series",
     "get_land_use",
     "get_sdg_for_cba_principle",
-    # SDG Indicators (UN SDG API)
     "get_sdg_progress",
     "get_sdg_series_data",
     "get_soil_carbon",
-    # Soil Properties (ISRIC SoilGrids)
     "get_soil_properties",
     "get_soil_texture",
     "get_solar_radiation",
@@ -146,15 +135,12 @@ __all__ = [
     "search_commodity_data",
     "search_fao_indicators",
     "search_gender_indicators",
-    # Knowledge Base (CBA ME Indicators)
     "search_indicators",
     "search_labor_indicators",
     "search_methods",
     "search_sdg_indicators",
     "search_species",
     "search_tools",
-    "search_tools",
-    # Use Cases
     "search_usecases",
     "set_active_tools",
 ]
@@ -182,6 +168,7 @@ REDUCED_TOOLS = [
     search_methods,
     get_indicator_details,
     list_knowledge_base_stats,
+    get_knowledge_version,
     # Indicator Selection
     find_indicators_by_principle,
     find_indicators_by_class,
@@ -256,6 +243,7 @@ FULL_TOOLS = [
     search_methods,
     get_indicator_details,
     list_knowledge_base_stats,
+    get_knowledge_version,
     # Indicator Selection Tools
     find_indicators_by_principle,
     find_indicators_by_class,

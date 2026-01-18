@@ -27,6 +27,7 @@ import argparse
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict
 
@@ -36,6 +37,22 @@ if TYPE_CHECKING:
     from chromadb.api import ClientAPI
 
 import pandas as pd
+
+# =============================================================================
+# Versioning
+# =============================================================================
+
+# Schema version for knowledge base. Increment when metadata structure changes.
+_SCHEMA_VERSION = "1.0"
+
+
+def _get_ingestion_timestamp() -> str:
+    """Get current UTC timestamp in ISO 8601 format for ingestion metadata."""
+    return datetime.now(UTC).isoformat()
+
+
+# Module-level ingestion timestamp (set at start of ingest())
+_ingestion_timestamp: str | None = None
 
 
 class IngestionSummary(TypedDict):
@@ -567,6 +584,9 @@ class IndicatorDoc:
             "principle_5": "5" in self.principles,
             "principle_6": "6" in self.principles,
             "principle_7": "7" in self.principles,
+            # Versioning metadata
+            "schema_version": _SCHEMA_VERSION,
+            "ingestion_timestamp": _ingestion_timestamp or _get_ingestion_timestamp(),
         }
 
 
@@ -722,6 +742,9 @@ class MethodsGroupDoc:
             # Open Access metadata
             "oa_count": oa_count,
             "has_oa_citations": oa_count > 0,
+            # Versioning metadata
+            "schema_version": _SCHEMA_VERSION,
+            "ingestion_timestamp": _ingestion_timestamp or _get_ingestion_timestamp(),
         }
 
 
@@ -1135,6 +1158,10 @@ def ingest(
     Returns:
         Summary dict with counts and any issues found.
     """
+    global _ingestion_timestamp
+    # Set a single timestamp for the entire ingestion run
+    _ingestion_timestamp = _get_ingestion_timestamp()
+
     summary: IngestionSummary = {
         "indicators_count": 0,
         "methods_groups_count": 0,

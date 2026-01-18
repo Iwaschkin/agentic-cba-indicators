@@ -30,7 +30,12 @@ from agentic_cba_indicators.config import (
     load_config,
     print_provider_info,
 )
+from agentic_cba_indicators.memory import TokenBudgetConversationManager
 from agentic_cba_indicators.prompts import get_system_prompt
+from agentic_cba_indicators.security import (
+    detect_injection_patterns,
+    sanitize_user_input,
+)
 from agentic_cba_indicators.tools import FULL_TOOLS, REDUCED_TOOLS
 from agentic_cba_indicators.tools._help import set_active_tools
 
@@ -66,9 +71,16 @@ def create_agent_from_config(
     model = create_model(provider_config)
 
     # Configure conversation memory
-    conversation_manager = SlidingWindowConversationManager(
-        window_size=agent_config.conversation_window,
-    )
+    # Use token-budget manager if context_budget is set, otherwise fall back to sliding window
+    if agent_config.context_budget is not None:
+        conversation_manager = TokenBudgetConversationManager(
+            max_tokens=agent_config.context_budget,
+        )
+    else:
+        # Legacy mode: use fixed message count
+        conversation_manager = SlidingWindowConversationManager(
+            window_size=agent_config.conversation_window,
+        )
 
     # Select tool set (includes internal help tools)
     tools = FULL_TOOLS if agent_config.tool_set == "full" else REDUCED_TOOLS
@@ -110,7 +122,8 @@ def create_agent(
         options={"num_ctx": 16384},
     )
 
-    conversation_manager = SlidingWindowConversationManager(window_size=5)
+    # Default token budget for legacy interface (conservative)
+    conversation_manager = TokenBudgetConversationManager(max_tokens=8000)
 
     agent = Agent(
         model=ollama_model,
@@ -277,10 +290,21 @@ def main() -> None:
                 print_help()
                 continue
 
+            # Sanitize user input (length limit, control char removal)
+            safe_input = sanitize_user_input(user_input)
+
+            # Log potential injection patterns (for monitoring, not blocking)
+            if patterns := detect_injection_patterns(safe_input):
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    "Potential injection pattern detected: %s", patterns
+                )
+
             print("\nAssistant: ", end="", flush=True)
 
             # Get response from agent (streams to stdout by default)
-            agent(user_input)
+            agent(safe_input)
 
             print("\n")  # Add spacing after response
 
@@ -291,5 +315,7 @@ def main() -> None:
             print(f"\n❌ Error: {e}\n")
 
 
+if __name__ == "__main__":
+    main()
 if __name__ == "__main__":
     main()

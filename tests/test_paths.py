@@ -49,14 +49,28 @@ class TestPathValidation:
         """Should log warning when path contains traversal patterns."""
         import logging
 
+        from agentic_cba_indicators.logging_config import LOGGER_NAME, reset_logging
         from agentic_cba_indicators.paths import clear_path_cache, get_data_dir
+
+        # Reset logging state and remove any existing handlers
+        reset_logging()
+
+        # Also clear handlers from the specific logger and its parent
+        paths_logger = logging.getLogger("agentic_cba_indicators.paths")
+        paths_logger.handlers.clear()
+        package_logger = logging.getLogger(LOGGER_NAME)
+        package_logger.handlers.clear()
+
+        # Ensure propagation is enabled so caplog can capture
+        paths_logger.propagate = True
+        package_logger.propagate = True
 
         # Path with .. pattern (will be normalized)
         env_path = str(tmp_path / "foo" / ".." / "custom_data")
         os.environ["AGENTIC_CBA_DATA_DIR"] = env_path
         clear_path_cache()
 
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger="agentic_cba_indicators.paths"):
             result = get_data_dir()
 
         # Should log warning about '..' pattern

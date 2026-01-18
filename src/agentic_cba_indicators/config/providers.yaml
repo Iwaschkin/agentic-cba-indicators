@@ -21,7 +21,7 @@ providers:
   # ---------------------------------------------------------------------------
   ollama:
     host: "http://localhost:11434"
-    model_id: "llama3.1:latest"
+    model_id: "qwen3:14b"
     temperature: 0.1
     options:
       num_ctx: 16384 # Context window size
@@ -75,5 +75,19 @@ agent:
   # Use "reduced" for smaller models, "full" for larger cloud models
   tool_set: reduced
 
-  # Conversation window size (number of message pairs to keep)
+  # Conversation memory management:
+  # Option 1: conversation_window - Fixed message count (legacy, default)
+  # Option 2: context_budget - Token-based budget (recommended for variable-length outputs)
+  #
+  # If context_budget is set, it takes precedence over conversation_window.
+  # Use context_budget to prevent context overflow from long tool outputs.
+
+  # Legacy: Fixed message count (number of message pairs to keep)
   conversation_window: 5
+
+  # Token budget for conversation history (overrides conversation_window if set)
+  # Recommended values by model:
+  #   - Ollama (16K context): 8000
+  #   - Claude (200K context): 50000
+  #   - GPT-4o (128K context): 40000
+  # context_budget: 8000

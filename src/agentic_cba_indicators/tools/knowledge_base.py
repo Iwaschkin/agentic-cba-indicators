@@ -3,12 +3,18 @@ Knowledge Base tools using ChromaDB and Ollama embeddings.
 
 Provides semantic search over the CBA ME Indicators database.
 Data is ingested from Excel files using scripts/ingest_excel.py.
+
+Thread Safety:
+    This module uses a singleton pattern for the ChromaDB client with thread-safe
+    lazy initialization. The singleton is safe for concurrent read access but
+    ChromaDB itself has limitations under heavy concurrent write loads.
 """
 
 from __future__ import annotations
 
 import os
 import re
+import threading
 import time
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
@@ -17,6 +23,7 @@ from strands import tool
 
 from agentic_cba_indicators.logging_config import get_logger
 from agentic_cba_indicators.paths import get_kb_path
+from agentic_cba_indicators.security import truncate_tool_output
 
 from ._embedding import EmbeddingError
 from ._embedding import get_embedding as _get_embedding
@@ -40,6 +47,14 @@ class IndicatorDataDict(TypedDict):
 class ChromaDBError(Exception):
     """Raised when ChromaDB operations fail after retries."""
 
+
+# =============================================================================
+# ChromaDB Client Singleton
+# =============================================================================
+
+# Thread-safe singleton for ChromaDB client
+_chroma_client: ClientAPI | None = None
+_chroma_client_lock = threading.Lock()
 
 # Retry settings for ChromaDB operations
 _CHROMADB_RETRIES = int(os.environ.get("CHROMADB_RETRIES", "3"))
@@ -82,51 +97,89 @@ def _extract_exact_match_term(query: str) -> str | None:
 
 
 def _get_chroma_client() -> ClientAPI:
-    """Get or create ChromaDB client with retry logic.
+    """Get or create ChromaDB client singleton with thread-safe lazy initialization.
 
-    Retries on transient failures (file locking, resource exhaustion).
-    Retry count and backoff configurable via CHROMADB_RETRIES and CHROMADB_BACKOFF env vars.
+    Uses double-checked locking pattern for thread safety. The client is created
+    once and reused for all subsequent calls, avoiding the overhead of creating
+    a new PersistentClient on every tool invocation.
+
+    Retries on transient failures (file locking, resource exhaustion) during
+    initial creation. Retry count and backoff configurable via CHROMADB_RETRIES
+    and CHROMADB_BACKOFF env vars.
 
     Returns:
-        ChromaDB PersistentClient instance
+        ChromaDB PersistentClient singleton instance
 
     Raises:
         ChromaDBError: If client creation fails after retries
     """
-    kb_path = get_kb_path()
-    last_error: Exception | None = None
+    global _chroma_client
 
-    for attempt in range(_CHROMADB_RETRIES + 1):
-        try:
-            return chromadb.PersistentClient(path=str(kb_path))
-        except Exception as e:
-            last_error = e
-            # Check for known transient errors
-            error_str = str(e).lower()
-            is_transient = any(
-                pattern in error_str
-                for pattern in ["locked", "busy", "timeout", "connection", "resource"]
-            )
+    # Fast path: client already exists
+    if _chroma_client is not None:
+        return _chroma_client
 
-            if not is_transient or attempt >= _CHROMADB_RETRIES:
-                # Non-transient error or max retries reached
-                raise ChromaDBError(f"ChromaDB client creation failed: {e}") from e
+    # Slow path: need to create client with thread safety
+    with _chroma_client_lock:
+        # Double-check after acquiring lock
+        if _chroma_client is not None:
+            return _chroma_client
 
-            # Wait before retry with exponential backoff
-            delay = _CHROMADB_BACKOFF * (2**attempt)
-            logger.debug(
-                "ChromaDB client creation failed (attempt %d/%d), retrying in %.1fs: %s",
-                attempt + 1,
-                _CHROMADB_RETRIES + 1,
-                delay,
-                e,
-            )
-            time.sleep(delay)
+        kb_path = get_kb_path()
+        last_error: Exception | None = None
 
-    # Should not reach here, but just in case
-    raise ChromaDBError(
-        f"ChromaDB client creation failed after {_CHROMADB_RETRIES + 1} attempts: {last_error}"
-    )
+        for attempt in range(_CHROMADB_RETRIES + 1):
+            try:
+                client = chromadb.PersistentClient(path=str(kb_path))
+                _chroma_client = client
+                logger.debug("ChromaDB client singleton initialized at %s", kb_path)
+                return client
+            except Exception as e:
+                last_error = e
+                # Check for known transient errors
+                error_str = str(e).lower()
+                is_transient = any(
+                    pattern in error_str
+                    for pattern in [
+                        "locked",
+                        "busy",
+                        "timeout",
+                        "connection",
+                        "resource",
+                    ]
+                )
+
+                if not is_transient or attempt >= _CHROMADB_RETRIES:
+                    # Non-transient error or max retries reached
+                    raise ChromaDBError(f"ChromaDB client creation failed: {e}") from e
+
+                # Wait before retry with exponential backoff
+                delay = _CHROMADB_BACKOFF * (2**attempt)
+                logger.debug(
+                    "ChromaDB client creation failed (attempt %d/%d), retrying in %.1fs: %s",
+                    attempt + 1,
+                    _CHROMADB_RETRIES + 1,
+                    delay,
+                    e,
+                )
+                time.sleep(delay)
+
+        # Should not reach here, but just in case
+        raise ChromaDBError(
+            f"ChromaDB client creation failed after {_CHROMADB_RETRIES + 1} attempts: {last_error}"
+        )
+
+
+def reset_chroma_client() -> None:
+    """Reset the ChromaDB client singleton.
+
+    Primarily for testing purposes. Allows tests to start with a fresh client.
+    Thread-safe.
+    """
+    global _chroma_client
+    with _chroma_client_lock:
+        _chroma_client = None
+        logger.debug("ChromaDB client singleton reset")
 
 
 def _get_collection(name: str) -> chromadb.Collection:
@@ -460,7 +513,10 @@ def get_indicator_details(indicator_id: int) -> str:
         else:
             output.append("\nNo measurement methods available for this indicator.")
 
-        return "\n".join(output)
+        result = "\n".join(output)
+        # Apply truncation to prevent context overflow
+        truncated_result, _ = truncate_tool_output(result)
+        return truncated_result
 
     except ChromaDBError as e:
         logger.warning("Indicator retrieval failed: %s", e, exc_info=True)
@@ -531,6 +587,74 @@ def list_knowledge_base_stats() -> str:
     except ChromaDBError as e:
         logger.warning("Stats retrieval failed: %s", e, exc_info=True)
         return f"Error getting stats: {e!s}"
+
+
+@tool
+def get_knowledge_version() -> str:
+    """
+    Get version information for the knowledge base.
+
+    Returns schema version and ingestion timestamp to verify data freshness
+    and compatibility. Use this to check when the knowledge base was last
+    updated and what schema version the data conforms to.
+
+    Returns:
+        Version information including schema version and ingestion timestamp
+    """
+    try:
+        client = _get_chroma_client()
+        collections = client.list_collections()
+
+        if not collections:
+            return "Knowledge base is empty. Run: python scripts/ingest_excel.py"
+
+        output = ["=== Knowledge Base Version ===\n"]
+
+        # Get version info from indicators collection (primary)
+        try:
+            indicators_coll = client.get_collection("indicators")
+            # Get just one document to check metadata
+            sample = indicators_coll.get(limit=1, include=["metadatas"])
+            metadatas = sample.get("metadatas") if sample else None
+
+            if metadatas and metadatas[0]:
+                meta = cast("dict[str, Any]", metadatas[0])
+                schema_version = meta.get("schema_version", "unknown (pre-1.0)")
+                ingestion_ts = meta.get("ingestion_timestamp", "unknown")
+
+                output.append(f"Schema Version: {schema_version}")
+                output.append(f"Ingestion Timestamp: {ingestion_ts}")
+
+                # Parse and format timestamp if available
+                if ingestion_ts and ingestion_ts != "unknown":
+                    try:
+                        from datetime import datetime
+
+                        # ISO format: 2025-01-18T12:34:56.789012+00:00
+                        dt = datetime.fromisoformat(ingestion_ts)
+                        output.append(
+                            f"Ingested: {dt.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+                        )
+                    except (ValueError, TypeError):
+                        pass
+            else:
+                output.append("Schema Version: unknown (no metadata)")
+                output.append("Ingestion Timestamp: unknown")
+
+        except Exception as e:
+            output.append(f"Could not retrieve version info: {e}")
+
+        # Collection summary
+        output.append("\nCollections:")
+        for coll_info in collections:
+            collection = client.get_collection(coll_info.name)
+            output.append(f"  - {coll_info.name}: {collection.count()} documents")
+
+        return "\n".join(output)
+
+    except ChromaDBError as e:
+        logger.warning("Version retrieval failed: %s", e, exc_info=True)
+        return f"Error getting version: {e!s}"
 
 
 @tool
@@ -1506,7 +1630,10 @@ def export_indicator_selection(
                 f"- **Indicators not found:** {len(indicator_ids) - found_count}"
             )
 
-        return "\n".join(output)
+        result = "\n".join(output)
+        # Apply truncation to prevent context overflow
+        truncated_result, _ = truncate_tool_output(result)
+        return truncated_result
 
     except ChromaDBError as e:
         logger.warning("Export generation failed: %s", e, exc_info=True)

@@ -12,6 +12,7 @@ A CLI chatbot for sustainable agriculture that queries weather, climate, socio-e
 - 🎯 UN SDG indicators
 - 📋 CBA ME Indicators and measurement methods
 - 📁 Real project use cases
+- 🖥️ Streamlit web UI with PDF context and report export
 
 ## Supported AI Providers
 
@@ -40,6 +41,17 @@ agentic-cba --provider=anthropic   # Requires ANTHROPIC_API_KEY
 agentic-cba --provider=openai      # Requires OPENAI_API_KEY
 agentic-cba --provider=gemini      # Requires GOOGLE_API_KEY
 agentic-cba --provider=bedrock     # Requires AWS credentials
+```
+
+## Streamlit Web UI
+
+Launch the web UI (chat, provider selection, PDF context, report export):
+
+```bash
+agentic-cba-ui
+
+# Or run directly with streamlit
+streamlit run src/agentic_cba_indicators/ui.py
 ```
 
 ## Configuration
@@ -141,6 +153,7 @@ You: Compare soil carbon indicators
 agentic-cba-indicators/
 ├── src/agentic_cba_indicators/  # Main package
 │   ├── cli.py                   # CLI entry point (agentic-cba command)
+│   ├── ui.py                    # Streamlit UI entry point (agentic-cba-ui command)
 │   ├── paths.py                 # XDG-style path resolution
 │   ├── config/                  # Provider configuration
 │   ├── prompts/                 # System prompts
@@ -157,6 +170,12 @@ Ingest CBA indicators before first use:
 ```bash
 python scripts/ingest_excel.py
 ```
+
+## Documentation
+
+- [Tools Reference](docs/tools-reference.md) - Complete list of available tools
+- [Known Limitations](docs/known-limitations.md) - Documented constraints and limitations
+- [Architecture Decision Records](docs/adr/README.md) - Key design decisions
 
 ## License
 

@@ -20,6 +20,7 @@ repos:
       - id: mypy
         additional_dependencies:
           - types-pyyaml
+          - types-cachetools
         args: [--config-file=pyproject.toml]
         files: ^src/
         exclude: ^(tests/|scripts/)

@@ -1,8 +1,8 @@
 # [TASK050] - Update .env.example
 
-**Status:** Pending
+**Status:** Completed
 **Added:** 2026-01-17
-**Updated:** 2026-01-17
+**Updated:** 2026-01-18
 
 ## Original Request
 Update `.env.example` with better GFW API key guidance.
@@ -16,13 +16,15 @@ Users need clear instructions for obtaining GFW API key. Reference the helper sc
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
-| 50.1 | Update GFW_API_KEY entry | Not Started | | |
+| 50.1 | Update GFW_API_KEY entry | Complete | 2026-01-18 | .env.example updated with guidance |
 
 ## Progress Log
 ### 2026-01-17
 - Task created as part of GFW forestry tools implementation plan
+### 2026-01-18
+- Updated .env.example with GFW API key guidance

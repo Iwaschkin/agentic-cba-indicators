@@ -2,6 +2,13 @@
 
 ## What Works
 - CLI agent creation and tooling
+- **Streamlit Web UI** (NEW)
+  - Entry point: `agentic-cba-ui`
+  - Provider selection dropdown
+  - Tool set (reduced/full) selection
+  - PDF upload for context extraction
+  - Chat interface with history
+  - Report detection and markdown export
 - Knowledge base ingestion scripts (with embedding retry/validation)
 - **Citation normalization in KB** (85.9% DOI extraction rate)
   - DOI parsing and validation per DOI Handbook (ISO 26324)
@@ -35,6 +42,9 @@
   - Citation normalization (57 tests including DOI regression tests)
   - Unpaywall module (9 tests)
   - OA enrichment (8 tests)
+  - HTTP caching (18 tests)
+  - Tool output truncation (9 tests)
+- **Total: 435 tests** after Phase 6 completion
 - Security hardening:
   - Error message sanitization (no URL params/credentials leaked)
   - TLS enforcement for Ollama connections
@@ -46,6 +56,7 @@
   - Retry logic for ChromaDB operations
   - JSON decode error handling
   - Embedding validation and retry
+  - **ChromaDB connection pooling** (singleton pattern, thread-safe)
 - Code consolidation:
   - Shared _embedding.py module (removed ~300 lines duplication)
   - Centralized country mappings in _mappings.py
@@ -53,6 +64,25 @@
 - Observability:
   - Structured logging via logging_config.py
   - Debug logging on retry paths
+  - **Metrics collection** (observability.py)
+    - Tool call counters (success/failure)
+    - Latency histograms with percentiles
+    - @instrument_tool decorator
+    - get_metrics_summary() for reporting
+  - **Audit logging** (audit.py)
+    - JSON Lines file output
+    - Parameter sanitization (API keys, passwords, tokens redacted)
+    - Result truncation (prevent log bloat)
+    - Configurable via AGENTIC_CBA_AUDIT_LOG env var
+  - **Structured JSON logging** (logging_config.py)
+    - JSONFormatter for JSON Lines output
+    - Configurable via AGENTIC_CBA_LOG_FORMAT env var
+    - Extra fields support for structured context
+    - Exception traceback formatting
+- **Knowledge base versioning** (NEW)
+  - Schema version tracking (_SCHEMA_VERSION = "1.0")
+  - Ingestion timestamps (UTC ISO 8601)
+  - get_knowledge_version() tool for freshness checks
 - Internal tool help system:
   - `list_tools()` - Agent self-discovery of available tools
   - `describe_tool()` - Agent access to full tool documentation
@@ -62,8 +92,134 @@
   - `get_tree_cover_loss_by_driver()` - Loss by driver category
   - `get_forest_carbon_stock()` - Above-ground biomass and carbon
   - `get_forest_extent()` - Current forest cover assessment
+- **Architecture Decision Records** (NEW)
+  - docs/adr/ directory with ADR template
+  - ADR-001: Synchronous Embedding Design (documents deferral rationale)
+  - ADR-002: Observability Strategy and Tracing Deferral
+  - ADR-003: Memory Architecture (token-budget conversation manager)
+  - ADR-004: Conversation Caching Deferral
+  - ADR-005: Self-Correction Mechanism Deferral
+  - ADR-006: Deferred Features Summary (living document)
+- **Tool output truncation** (NEW)
+  - MAX_TOOL_OUTPUT_LENGTH = 50000 chars (~12500 tokens)
+  - Prevents context overflow in LLM prompts
+  - Applied to export_indicator_selection() and get_indicator_details()
+- **API response caching** (NEW)
+  - TTLCache with 5-minute default TTL
+  - Reduces redundant API calls to Open-Meteo, World Bank, etc.
+  - Thread-safe with cache bypass for mutations
+- **Known Limitations documentation** (NEW)
+  - docs/known-limitations.md with 23 documented P3 items
+  - Organized by category with impact and mitigation
 
 ## Completed
+
+### Code Review v3 Remediation - Phase 1 & 2 (2026-01-18)
+**Implemented structured remediation from comprehensive code review:**
+
+**Phase 1 - Storage Foundation (COMPLETE):**
+- TASK101: ChromaDB connection pooling singleton
+  - Thread-safe lazy initialization with double-checked locking
+  - Retry logic for transient failures
+  - 5 new tests for singleton behavior
+- TASK102: Knowledge versioning metadata
+  - _SCHEMA_VERSION constant and ingestion timestamps
+  - get_knowledge_version() tool
+  - 9 new tests for versioning
+- TASK103: ADR-001 documenting sync embedding design
+  - Full rationale for deferring async implementation
+  - Review triggers for when to revisit
+
+**Phase 2 - Observability Core (COMPLETE):**
+- TASK104: Basic metrics collection
+  - MetricsCollector with thread-safe counters/histograms
+  - @instrument_tool decorator
+  - Bounded latency samples (MAX_LATENCY_SAMPLES = 10000)
+- TASK105: Audit logging module
+  - AuditEntry dataclass with JSON serialization
+  - AuditLogger with JSON Lines output
+  - Parameter sanitization (regex-based credential redaction)
+- TASK106: Structured JSON logging
+  - JSONFormatter class for JSON Lines output
+  - AGENTIC_CBA_LOG_FORMAT environment variable
+  - 26 new tests for JSON logging
+- TASK107: ADR-002 documenting observability strategy
+  - Rationale for deferring distributed tracing
+  - Migration path to OpenTelemetry
+  - Review triggers for future implementation
+
+**Phase 3 - Memory Architecture (COMPLETE):**
+- TASK108: Token-budget conversation manager ✅
+  - TokenBudgetConversationManager class extending Strands SDK
+  - Token estimation (chars/4 heuristic, pluggable)
+  - apply_management() trims oldest messages to fit budget
+  - reduce_context() for aggressive overflow handling
+  - Tool pair preservation (toolUse/toolResult)
+  - context_budget config option in providers.yaml
+  - 36 new tests for memory module
+- TASK109: Memory limitations ADR ✅
+  - ADR-003-memory-architecture.md
+  - Documents deferred: summarization, selective retrieval, persistence
+  - Review triggers for revisiting decision
+
+**Phase 4 - Security Hardening (COMPLETE):**
+- TASK110: Input sanitization security module ✅
+  - security.py module with multi-layer defense
+  - sanitize_user_input(): length limits, control char removal, whitespace normalization
+  - detect_injection_patterns(): heuristic injection detection for logging
+  - wrap_with_delimiters(): optional delimiter wrapping
+  - validate_user_input(): strict validation with exceptions
+  - Integrated into cli.py and ui.py user input paths
+  - 52 new tests for security module
+- TASK111: PDF context sanitization ✅
+  - MAX_PDF_CONTEXT_LENGTH = 50000 constant
+  - sanitize_pdf_context(): returns (text, was_truncated) tuple
+  - Truncation warning in UI sidebar
+  - 8 new tests for PDF sanitization
+
+**Phase 5 - Performance Optimization (COMPLETE):**
+- TASK112: API response caching ✅
+  - fetch_json_cached() with TTLCache (default 5 min, max 1000 entries)
+  - make_cache_key() for consistent key generation
+  - @cached_api_call decorator for function-level caching
+  - Cache bypass for mutations (POST with body)
+  - Thread-safe implementation with cachetools
+  - 18 new tests for caching behavior
+- TASK113: Tool output truncation ✅
+  - MAX_TOOL_OUTPUT_LENGTH = 50000 chars (~12500 tokens)
+  - truncate_tool_output() returns (text, was_truncated) tuple
+  - Applied to export_indicator_selection() and get_indicator_details()
+  - 9 new tests for truncation logic
+- TASK114: Conversation caching deferral ADR ✅
+  - ADR-004-conversation-caching-deferral.md
+  - Distinguishes API caching (P2-023) from conversation caching (P2-024)
+  - Documents complexity concerns and future implementation sketch
+
+**Phase 6 - Documentation & Deferrals (COMPLETE):**
+- TASK115: Architecture decision records ✅
+  - ADR-005-self-correction-deferral.md (P1-006)
+  - ADR-006-deferred-features-summary.md (consolidates all deferrals)
+  - Updated ADR README index
+- TASK116: P3 limitations documentation ✅
+  - Created docs/known-limitations.md (23 P3 items documented)
+  - Added Documentation section to README.md
+  - All P3 findings from code review documented with impact and mitigation
+
+**Test Coverage:** 435 tests total (348 Phase 1-3 + 60 Phase 4 + 18 caching + 9 truncation)
+
+### Streamlit Web UI (2026-01-18)
+**Implemented full Streamlit UI for CBA Indicators assistant:**
+- **Entry Point**: `agentic-cba-ui` command
+- **New Module**: `src/agentic_cba_indicators/ui.py` (380 lines)
+- **Dependency**: Added `streamlit>=1.40.0`
+- **Features**:
+  - Chat interface with streaming responses
+  - Provider selection (ollama, anthropic, openai, etc.)
+  - Tool set selection (reduced/full)
+  - PDF upload with text extraction
+  - Report detection and markdown export
+  - Session state management
+- **Verification**: 220 tests pass, imports work, uv sync succeeds
 
 ### DOI Regex Bug Fix (2026-01-18)
 **Fixed critical DOI truncation bug affecting 5+ citations:**
@@ -165,9 +321,10 @@
 **Total: 59 tasks completed (TASK008-TASK076)**
 **Total with v2 remediation: 69 tasks completed (TASK008-TASK087)**
 **Total with bug fixes: 71 tasks completed (TASK008-TASK089)**
+**Total with v3 remediation: 87 tasks completed (TASK008-TASK116)**
 
 ## In Progress
-- None
+- None (All remediation phases complete)
 
 ## Remaining / Future Enhancements
 

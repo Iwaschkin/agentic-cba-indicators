@@ -20,16 +20,19 @@ Replace broad `except Exception as e:` patterns with specific exception handling
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
-| 1.1 | Audit except blocks | Not Started | | |
-| 1.2 | Update all tool functions | Not Started | | |
-| 1.3 | Run tests | Not Started | | |
+| 1.1 | Audit except blocks | Complete | 2026-01-19 | Audited SDG handlers |
+| 1.2 | Update all tool functions | Complete | 2026-01-19 | Specific exceptions applied |
+| 1.3 | Run tests | Complete | 2026-01-19 | Tests pass |
 
 ## Progress Log
+### 2026-01-19
+- Narrowed exception handling in sdg.py
+- Verified tests pass
 
 ## Definition of Done
 - All 4 catch blocks use (APIError, httpx.HTTPError)

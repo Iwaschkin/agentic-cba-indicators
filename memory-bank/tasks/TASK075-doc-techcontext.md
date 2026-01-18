@@ -28,9 +28,10 @@ Document Unpaywall API integration in techContext.md.
 |----|-------------|--------|---------|-------|
 | 75.1 | Add Unpaywall section to techContext | Complete | 2026-01-18 | After CrossRef section |
 | 75.2 | Document API details | Complete | 2026-01-18 | URL, auth, timeout, fields, OA status table |
-| 75.3 | Reference module path | Not Started | - | _unpaywall.py location |
-| 75.4 | Review for accuracy | Not Started | - | Validate all details |
+| 75.3 | Reference module path | Complete | 2026-01-18 | _unpaywall.py location documented |
+| 75.4 | Review for accuracy | Complete | 2026-01-18 | Details validated |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- Documented Unpaywall API in techContext.md

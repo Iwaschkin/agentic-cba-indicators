@@ -28,9 +28,10 @@ Display Open Access citation statistics in knowledge base stats tool.
 |----|-------------|--------|---------|-------|
 | 69.1 | Query methods collection metadata | Complete | 2026-01-18 | Get all oa_count values |
 | 69.2 | Calculate OA statistics | Complete | 2026-01-18 | Total count, percentage |
-| 69.3 | Update output format | Not Started | - | Add OA section |
-| 69.4 | Test with enriched KB | Not Started | - | Validate stats display |
+| 69.3 | Update output format | Complete | 2026-01-18 | OA section added to output |
+| 69.4 | Test with enriched KB | Complete | 2026-01-18 | OA stats display verified |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- OA stats output added and validated

@@ -1,8 +1,8 @@
 # [TASK044] - Add Input Validation Helpers
 
-**Status:** Pending
+**Status:** Completed
 **Added:** 2026-01-17
-**Updated:** 2026-01-17
+**Updated:** 2026-01-18
 
 ## Original Request
 Add validation helpers for country codes, window_years, and radius_km.
@@ -17,15 +17,17 @@ Consistent input validation prevents confusing API errors. Country codes should 
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
-| 44.1 | Add country code validation | Not Started | | |
-| 44.2 | Add window_years validation | Not Started | | |
-| 44.3 | Add radius_km validation | Not Started | | |
+| 44.1 | Add country code validation | Complete | 2026-01-18 | ISO3 validation added |
+| 44.2 | Add window_years validation | Complete | 2026-01-18 | 5/10 year constraint |
+| 44.3 | Add radius_km validation | Complete | 2026-01-18 | Radius capped per GFW limits |
 
 ## Progress Log
 ### 2026-01-17
 - Task created as part of GFW forestry tools implementation plan
+### 2026-01-18
+- Added validation helpers for GFW inputs

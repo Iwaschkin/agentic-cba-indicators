@@ -28,9 +28,10 @@ Add parameter to filter search_methods() results to only indicators with OA cita
 |----|-------------|--------|---------|-------|
 | 70.1 | Add oa_only parameter | Complete | 2026-01-18 | Default False for backward compatibility |
 | 70.2 | Implement where clause filtering | Complete | 2026-01-18 | where={"has_oa_citations": True} |
-| 70.3 | Update docstring | Not Started | - | Document filtering behavior |
-| 70.4 | Test with/without filter | Not Started | - | Validate result counts |
+| 70.3 | Update docstring | Complete | 2026-01-18 | Docstring updated for oa_only |
+| 70.4 | Test with/without filter | Complete | 2026-01-18 | Filtering behavior validated |
 
 ## Progress Log
 ### 2026-01-18
 - Task created from plan-unpaywall-crossref-enrichment.md analysis
+- oa_only parameter documented and validated

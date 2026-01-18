@@ -3,21 +3,33 @@ Shared HTTP client utilities for external API tools.
 
 Provides consistent error handling, retry logic, and rate limiting
 across all external data source integrations.
+
+Thread Safety:
+    The TTL cache for API responses uses cachetools.TTLCache with a
+    threading.Lock to ensure thread-safe access in multi-threaded contexts.
 """
 
+import hashlib
 import json
 import os
 import random
 import re
+import threading
 import time
-from typing import Any
+from collections.abc import Callable
+from functools import wraps
+from typing import Any, TypeVar
 
 import httpx
+from cachetools import TTLCache
 
 from agentic_cba_indicators.logging_config import get_logger
 
 # Module logger
 logger = get_logger(__name__)
+
+# Type variable for generic decorator
+F = TypeVar("F", bound=Callable[..., Any])
 
 # Default configuration (configurable via environment variables)
 DEFAULT_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT", "30.0"))
@@ -25,6 +37,16 @@ DEFAULT_RETRIES = int(os.environ.get("HTTP_RETRIES", "3"))
 DEFAULT_BACKOFF_BASE = float(os.environ.get("HTTP_BACKOFF_BASE", "1.0"))
 DEFAULT_BACKOFF_MAX = float(os.environ.get("HTTP_BACKOFF_MAX", "30.0"))
 DEFAULT_USER_AGENT = "StrandsCLI/1.0 (CBA-ME-Indicators)"
+
+# Cache configuration
+DEFAULT_CACHE_TTL = int(os.environ.get("API_CACHE_TTL", "3600"))  # 1 hour
+DEFAULT_CACHE_MAXSIZE = int(os.environ.get("API_CACHE_MAXSIZE", "1000"))
+
+# Global TTL cache for API responses (thread-safe)
+_api_cache: TTLCache[str, Any] = TTLCache(
+    maxsize=DEFAULT_CACHE_MAXSIZE, ttl=DEFAULT_CACHE_TTL
+)
+_cache_lock = threading.Lock()
 
 # Patterns for sensitive data sanitization
 _SENSITIVE_PATTERNS = [
@@ -254,3 +276,181 @@ def format_error(error: Exception, context: str = "") -> str:
         return f"{prefix}{sanitize_error(str(error))}"
 
     return f"{prefix}{sanitize_error(str(error))}"
+
+
+# =============================================================================
+# API Response Caching
+# =============================================================================
+
+
+def _make_cache_key(url: str, params: dict[str, Any] | None = None) -> str:
+    """Generate a cache key from URL and query parameters.
+
+    Args:
+        url: The request URL
+        params: Query parameters dictionary
+
+    Returns:
+        SHA256 hash of normalized URL + params for consistent key generation
+    """
+    # Normalize params to sorted JSON for consistent hashing
+    params_str = json.dumps(params, sort_keys=True) if params else ""
+    key_data = f"{url}|{params_str}"
+    return hashlib.sha256(key_data.encode()).hexdigest()
+
+
+def fetch_json_cached(
+    url: str,
+    params: dict[str, Any] | None = None,
+    client: httpx.Client | None = None,
+    retries: int = DEFAULT_RETRIES,
+    backoff_base: float = DEFAULT_BACKOFF_BASE,
+    use_cache: bool = True,
+) -> dict[str, Any] | list[Any]:
+    """
+    Fetch JSON from URL with caching and retry logic.
+
+    Wraps fetch_json with TTL-based caching for repeated requests.
+    Cache is thread-safe and shared across tool invocations.
+
+    Args:
+        url: The URL to fetch
+        params: Query parameters
+        client: Optional existing httpx client (creates one if not provided)
+        retries: Number of retry attempts for 429/5xx errors
+        backoff_base: Base delay for exponential backoff (seconds)
+        use_cache: Whether to use caching (default True)
+
+    Returns:
+        Parsed JSON response (from cache if available)
+
+    Raises:
+        APIError: On non-recoverable HTTP errors or exhausted retries
+    """
+    if not use_cache:
+        return fetch_json(url, params, client, retries, backoff_base)
+
+    cache_key = _make_cache_key(url, params)
+
+    # Check cache (thread-safe read)
+    with _cache_lock:
+        if cache_key in _api_cache:
+            logger.debug("Cache hit for %s", url[:80])
+            return _api_cache[cache_key]
+
+    # Cache miss - fetch from API
+    logger.debug("Cache miss for %s", url[:80])
+    result = fetch_json(url, params, client, retries, backoff_base)
+
+    # Store in cache (thread-safe write)
+    with _cache_lock:
+        _api_cache[cache_key] = result
+
+    return result
+
+
+def cached_api_call(
+    ttl: int | None = None,
+    maxsize: int | None = None,
+) -> Callable[[F], F]:
+    """
+    Decorator for caching API call results with TTL.
+
+    Creates a dedicated cache per decorated function with configurable
+    TTL and size limits. Useful for functions that make API calls with
+    hashable arguments.
+
+    Args:
+        ttl: Time-to-live in seconds (default: DEFAULT_CACHE_TTL)
+        maxsize: Maximum cache size (default: 100)
+
+    Returns:
+        Decorator function
+
+    Example:
+        @cached_api_call(ttl=3600)
+        def get_country_data(country_code: str) -> dict:
+            return fetch_json(f"https://api.example.com/countries/{country_code}")
+
+    Note:
+        - Only works with hashable arguments
+        - Cache is local to each decorated function
+        - Thread-safe via lock
+    """
+    actual_ttl = ttl or DEFAULT_CACHE_TTL
+    actual_maxsize = maxsize or 100
+
+    def decorator(func: F) -> F:
+        # Create per-function cache and lock
+        cache: TTLCache[str, Any] = TTLCache(maxsize=actual_maxsize, ttl=actual_ttl)
+        lock = threading.Lock()
+
+        @wraps(func)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # Build cache key from function name + args + kwargs
+            try:
+                key_data = json.dumps(
+                    {"args": args, "kwargs": kwargs}, sort_keys=True, default=str
+                )
+            except (TypeError, ValueError):
+                # If args aren't JSON-serializable, don't cache
+                logger.debug(
+                    "Cannot cache %s: non-serializable arguments", func.__name__
+                )
+                return func(*args, **kwargs)
+
+            cache_key = hashlib.sha256(key_data.encode()).hexdigest()
+
+            # Check cache
+            with lock:
+                if cache_key in cache:
+                    logger.debug("Cache hit for %s", func.__name__)
+                    return cache[cache_key]
+
+            # Cache miss - call function
+            logger.debug("Cache miss for %s", func.__name__)
+            result = func(*args, **kwargs)
+
+            # Store in cache
+            with lock:
+                cache[cache_key] = result
+
+            return result
+
+        # Expose cache for testing/inspection
+        wrapper.cache = cache  # type: ignore[attr-defined]
+        wrapper.cache_clear = lambda: cache.clear()  # type: ignore[attr-defined]
+
+        return wrapper  # type: ignore[return-value]
+
+    return decorator
+
+
+def get_cache_stats() -> dict[str, Any]:
+    """Get statistics about the global API response cache.
+
+    Returns:
+        Dictionary with cache statistics including:
+        - size: Current number of cached items
+        - maxsize: Maximum cache size
+        - ttl: Time-to-live in seconds
+    """
+    with _cache_lock:
+        return {
+            "size": len(_api_cache),
+            "maxsize": _api_cache.maxsize,
+            "ttl": _api_cache.ttl,
+        }
+
+
+def clear_api_cache() -> int:
+    """Clear the global API response cache.
+
+    Returns:
+        Number of items cleared from cache
+    """
+    with _cache_lock:
+        count = len(_api_cache)
+        _api_cache.clear()
+        logger.info("Cleared %d items from API cache", count)
+        return count

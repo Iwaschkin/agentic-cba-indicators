@@ -69,7 +69,8 @@ class AgentConfig:
     """Configuration for the agent."""
 
     tool_set: str = "reduced"  # "reduced" or "full"
-    conversation_window: int = 5
+    conversation_window: int = 5  # Legacy: message count for SlidingWindow
+    context_budget: int | None = None  # Token budget (None = use conversation_window)
 
 
 def _expand_env_vars(value: Any) -> Any:
@@ -196,6 +197,12 @@ def _validate_config(config: dict[str, Any]) -> None:
         if not isinstance(conversation_window, int) or conversation_window <= 0:
             raise ValueError("Agent 'conversation_window' must be a positive integer")
 
+        context_budget = agent_cfg.get("context_budget")
+        if context_budget is not None and (
+            not isinstance(context_budget, int) or context_budget <= 0
+        ):
+            raise ValueError("Agent 'context_budget' must be a positive integer if set")
+
 
 def get_provider_config(config: dict[str, Any]) -> ProviderConfig:
     """
@@ -237,6 +244,7 @@ def get_agent_config(config: dict[str, Any]) -> AgentConfig:
     return AgentConfig(
         tool_set=agent_cfg.get("tool_set", "reduced"),
         conversation_window=agent_cfg.get("conversation_window", 5),
+        context_budget=agent_cfg.get("context_budget"),
     )
 
 
