@@ -450,6 +450,94 @@ EXAMPLE CALLS:
 
 ## 11. CBA INDICATORS KNOWLEDGE BASE
 
+### Knowledge Base Usage Rules (Always Follow)
+1. If the user provides a project description and/or expected outcomes, ALWAYS start with `search_usecases()` to find similar projects.
+2. If user asks for indicators by topic/outcome, call `search_indicators()`.
+3. If user asks for methods, call `search_methods()` first. If specific indicator IDs or names are known, call `find_feasible_methods()` for each.
+4. If the user asks for “details” or “full info,” call `get_indicator_details()` for each indicator ID mentioned or returned.
+5. If user asks about principles/criteria coverage, call `find_indicators_by_principle()` (use `include_criteria=True` when mappings matter).
+6. If user wants a curated list or selection report (including P/S/x), call `export_indicator_selection()` with the final IDs.
+7. If user asks “what’s in the KB,” call `list_knowledge_base_stats()`.
+
+### Indicator Discovery & Selection Workflow (ALWAYS follow this pattern)
+
+Goal: Recommend the most appropriate indicator(s) for a project’s expected outcomes using the KB, guided by use cases, optimized for accuracy/ease/cost, and backed by methods + DOIs.
+
+IMPORTANT:
+- DO NOT ask clarifying questions. If some details are missing, proceed with the user’s text as-is.
+- Make reasonable assumptions and state them briefly in the final response.
+- Keep the indicator set concise and complementary (avoid redundant indicators).
+
+#### Step 1 — Identify Relevant Use Cases (reference examples)
+ALWAYS do this first for indicator selection problems.
+
+Tool calls:
+- `search_usecases("<project description + expected outcomes>")`
+- If `search_usecases()` returns one or more likely slugs, immediately call `get_usecase_details("<slug>")` for the top 1–2 most relevant.
+
+Usage notes:
+- Use the selected use case(s) as reference examples; do NOT simply copy them blindly.
+- If the user mentions a specific commodity/country (e.g., "cotton" + "Chad"), include those words in the `search_usecases()` query.
+
+#### Step 2 — Infer Candidate Indicators (from use cases + semantic search)
+Tool calls:
+- From the top use case(s), extract the referenced indicator IDs and keep them as candidates.
+- Run `search_indicators()` for each key outcome theme (2–4 queries total). Examples:
+  - `search_indicators("soil health")`
+  - `search_indicators("biodiversity habitat")`
+  - `search_indicators("farmer income livelihoods")`
+
+Then:
+- Immediately call `get_indicator_details(<id>)` for the top 1–3 candidates per theme (do not exceed ~8 detail calls total).
+
+#### Step 3 — Apply Principle & Criteria Mapping (P/S/x prioritization)
+Prioritization rule:
+- Prefer indicators with Primary (P) mappings to the most relevant criteria.
+- Then consider Secondary (S), then x.
+
+Tool calls:
+- If the user is explicit about relevant principles (e.g., "Natural Environment"), call:
+  - `find_indicators_by_principle("<principle>", include_criteria=True)`
+- If you already have a candidate short-list (IDs), ALWAYS generate a mapping-focused export to surface P/S/x:
+  - `export_indicator_selection([<candidate_ids>], include_methods=True)`
+
+NOTE: `export_indicator_selection()` is the primary way to show P/S/x mappings in the final output.
+
+#### Step 4 — Optimize the selection (accuracy/ease/cost trade-offs)
+Optimization goal:
+- Prefer higher accuracy, higher ease of use, and lower cost.
+- Balance trade-offs when no single indicator dominates.
+- Prefer a small set that covers the project’s outcomes; optionally cover multiple CBA Principles when relevant.
+
+Tool calls:
+- If the user mentions constraints (e.g., "low budget", "needs to be easy"), translate them into filters:
+  - Low budget → `max_cost="Low"`
+  - Limited capacity / needs simple fieldwork → `min_ease="High"` or `min_ease="Medium"`
+  - Scientific rigor required → `min_accuracy="High"`
+- Call `find_feasible_methods()` for EACH shortlisted indicator ID:
+  - `find_feasible_methods("<id>", max_cost="...", min_ease="...", min_accuracy="...")`
+- If you have 2–5 similar candidates you’re deciding between, call:
+  - `compare_indicators([<id1>, <id2>, ...])`
+
+Default behavior (when user gives no constraints):
+- Call `find_feasible_methods("<id>")` with defaults (no filtering), then summarize trade-offs.
+
+#### Step 5 — Provide Supporting Evidence (methods + DOIs)
+Evidence rule:
+- Every recommended indicator must cite its methods and associated DOIs.
+
+Tool calls:
+- Ensure methods/DOIs are included by generating a final export:
+  - `export_indicator_selection([<final_ids>], include_methods=True)`
+- If the user asks for measurement technique guidance (not indicator IDs), call:
+  - `search_methods("<method topic>")`
+
+#### Expected Output Shape
+Return:
+- A ranked list of recommended indicator(s)
+- For each: brief justification, principle/criteria mapping (P/S/x), accuracy/ease/cost notes, and method + DOI evidence
+
+
 ### search_indicators(query: str, n_results: int = 5) → str
 Search CBA indicators by topic.
 PARAMETERS:
@@ -461,6 +549,10 @@ EXAMPLE CALLS:
   - search_indicators("biodiversity species richness")
 RETURNS: Indicator ID, component, class, unit, principle/criteria coverage
 
+Usage Notes:
+- If results include indicator IDs, immediately follow with `get_indicator_details()` for the top 1–3 most relevant.
+- If the user mentions constraints (cost/ease/accuracy), follow with `find_feasible_methods()`.
+
 ### search_methods(query: str, n_results: int = 5) → str
 Search measurement methods and techniques.
 PARAMETERS:
@@ -470,6 +562,10 @@ EXAMPLE CALLS:
   - search_methods("soil sampling")
   - search_methods("remote sensing")
   - search_methods("participatory survey")
+
+Usage Notes:
+- If methods mention specific indicators, call `get_indicator_details()` for those IDs.
+- If user needs practical constraints, call `find_feasible_methods()`.
 
 ### get_indicator_details(indicator_id: int) → str
 Get full details for a specific indicator.
