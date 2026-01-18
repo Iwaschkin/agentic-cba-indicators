@@ -1,6 +1,6 @@
 # [TASK073] - Add OA enrichment tests to test_ingest_excel.py
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 
@@ -23,11 +23,15 @@ Add tests for OA enrichment functionality in ingestion pipeline.
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
+| 73.1 | Test Citation.enrich_from_unpaywall() | Complete | 2026-01-18 | 2 tests (success, None handling) |
+| 73.2 | Test OA display formatting | Complete | 2026-01-18 | 2 tests (badge, PDF link) |
+| 73.3 | Test MethodDoc OA fields | Complete | 2026-01-18 | 2 tests (count, display) |
+| 73.4 | Test MethodsGroupDoc OA | Complete | 2026-01-18 | 2 tests (aggregation) |
 | 73.1 | Test enrich_dois_batch() | Not Started | - | Mock both APIs |
 | 73.2 | Test Citation.enrich_from_unpaywall() | Not Started | - | Field population |
 | 73.3 | Test to_display_string() with OA | Not Started | - | Badge and PDF link |

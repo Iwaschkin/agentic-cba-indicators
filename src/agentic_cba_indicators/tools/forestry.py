@@ -481,9 +481,6 @@ def get_tree_cover_loss_trends(
         return str(e)
     except APIError as e:
         return format_error(e, "fetching tree cover loss trends")
-    except Exception as e:
-        logger.exception("Unexpected error in get_tree_cover_loss_trends")
-        return f"Error: {e!s}"
 
 
 @tool
@@ -598,9 +595,6 @@ def get_tree_cover_loss_by_driver(
         return str(e)
     except APIError as e:
         return format_error(e, "fetching loss by driver")
-    except Exception as e:
-        logger.exception("Unexpected error in get_tree_cover_loss_by_driver")
-        return f"Error: {e!s}"
 
 
 @tool
@@ -691,9 +685,6 @@ def get_forest_carbon_stock(
         return str(e)
     except APIError as e:
         return format_error(e, "fetching carbon stock")
-    except Exception as e:
-        logger.exception("Unexpected error in get_forest_carbon_stock")
-        return f"Error: {e!s}"
 
 
 @tool
@@ -796,6 +787,3 @@ def get_forest_extent(
         return str(e)
     except APIError as e:
         return format_error(e, "fetching forest extent")
-    except Exception as e:
-        logger.exception("Unexpected error in get_forest_extent")
-        return f"Error: {e!s}"

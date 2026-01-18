@@ -203,8 +203,6 @@ def search_species(query: str, n_results: int = 10) -> str:
 
     except APIError as e:
         return format_error(e, "searching GBIF species")
-    except Exception as e:
-        return format_error(e, "processing species search")
 
 
 @tool
@@ -347,8 +345,6 @@ def get_species_occurrences(
 
     except APIError as e:
         return format_error(e, "fetching occurrences")
-    except Exception as e:
-        return format_error(e, "processing occurrences")
 
 
 @tool
@@ -504,8 +500,6 @@ def get_biodiversity_summary(
 
     except APIError as e:
         return format_error(e, "fetching biodiversity data")
-    except Exception as e:
-        return format_error(e, "processing biodiversity summary")
 
 
 @tool
@@ -601,5 +595,3 @@ def get_species_taxonomy(species: str) -> str:
 
     except APIError as e:
         return format_error(e, "fetching taxonomy")
-    except Exception as e:
-        return format_error(e, "processing taxonomy")

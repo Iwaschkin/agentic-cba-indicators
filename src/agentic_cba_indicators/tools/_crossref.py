@@ -134,8 +134,9 @@ def fetch_crossref_metadata(doi: str) -> CrossRefMetadata | None:
     except httpx.HTTPStatusError as e:
         logger.warning("CrossRef HTTP error for %s: %s", doi, e.response.status_code)
         return None
-    except Exception as e:
-        logger.warning("CrossRef fetch failed for %s: %s", doi, e)
+    except ValueError:
+        # json.JSONDecodeError inherits from ValueError
+        logger.warning("CrossRef returned invalid JSON for DOI: %s", doi)
         return None
 
 

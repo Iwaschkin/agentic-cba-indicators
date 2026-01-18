@@ -3,8 +3,42 @@
 ## In Progress
 
 ## Pending
+(none)
 
-### Unpaywall + CrossRef OA Enrichment (TASK062-TASK076)
+## Completed
+
+### Bug Fixes (2026-01-18)
+- [TASK088] DOI regex truncation fix - Pattern now handles parentheses/brackets ✅
+- [TASK089] enrich_dois_batch API call fix - Renamed preview_only to skip_mutation ✅
+
+### Code Review v2 Remediation - ALL PHASES COMPLETE (TASK078-TASK087)
+**Phase 1 - Exception Handling Hardening:**
+- [TASK078] Narrow exception handling in knowledge_base.py - P1 ✅
+- [TASK079] Narrow exception handling in forestry.py - P1 ✅
+- [TASK080] Narrow exception handling in nasa_power.py - P1 ✅
+- [TASK081] Narrow exception handling in sdg.py - P1 ✅
+- [TASK082] Narrow exception handling in remaining tools - P1 ✅
+  - Fixed: soilgrids.py, labor.py, gender.py, commodities.py, biodiversity.py, agriculture.py
+  - Fixed: _crossref.py, _unpaywall.py, _embedding.py
+  - Reduced `except Exception` from 64 to 17 (intentional per-item/retry handlers)
+
+**Phase 2 - Input Validation & Resource Limits:**
+- [TASK083] PDF text length limit - Already addressed by existing code (4000 char summary + 6000 char embedding truncation) ✅
+- [TASK084] n_results parameter validation - Already addressed by `min(max(1, n_results), MAX)` pattern in 7 functions ✅
+
+**Phase 3 - Documentation & Constants:**
+- [TASK085] Add docstrings to KB internal helpers - Enhanced `_resolve_indicator_id()` with full Google-style docstring ✅
+- [TASK086] Extract embedding dimension constant - Added `_MIN_EMBEDDING_DIMENSION = 64` constant ✅
+
+**Phase 4 - Deferred Items:**
+- [TASK087] Document thread-safety constraint - Added Thread Safety section to `_geo.py` module docstring ✅
+
+**All 212 tests pass after remediation.**
+
+### Code Review v2 - COMPLETE (TASK077)
+- [TASK077] Architecture & Module Discovery - Full 5-phase code review with findings report ✅
+
+### Unpaywall + CrossRef OA Enrichment - COMPLETE (TASK062-TASK076)
 - [TASK062] Migrate CrossRef to secrets and add Unpaywall - Secrets integration for both APIs ✅
 - [TASK063] Create _unpaywall.py module - OA metadata dataclass and fetch function ✅
 - [TASK064] Add OA fields to Citation class - is_oa, oa_status, pdf_url, license, version, host_type ✅
@@ -20,8 +54,6 @@
 - [TASK074] Fix all pre-commit/pyright/test issues - All 212 tests passing ✅
 - [TASK075] Update techContext.md with Unpaywall API - API documentation ✅
 - [TASK076] Update Memory Bank with OA completion - Progress and context updates ✅
-
-## Completed
 
 ### Citation Normalization Implementation - COMPLETE (TASK021, TASK053-TASK061)
 - [TASK021] Citation Normalization & Embedding Model Strategy - Strategy + full implementation ✅
@@ -119,14 +151,15 @@
 
 ## Summary
 
-### Remediation Plan Statistics
-- **Total Tasks:** 30 (TASK008-TASK037)
-- **Completed:** 30
-- **False Positives:** 6 (already implemented or not applicable)
-- **Total Test Count:** 75 (up from ~35 at start)
+### Overall Statistics
+- **Total Tasks Completed:** 89 (TASK001-TASK089)
+- **Total Tests:** 220 (up from ~35 at project start)
+- **Code Review Remediation:** 10 tasks (TASK078-TASK087)
+- **Bug Fixes:** 2 tasks (TASK088-TASK089)
 
 ### Key Improvements Made
 1. **Security:** Error sanitization, TLS enforcement, path validation
-2. **Reliability:** Retry logic, error handling, coordinate validation
+2. **Reliability:** Retry logic, error handling, coordinate validation, DOI regex fix
 3. **Maintainability:** Code consolidation, logging, constants extraction
-4. **Testing:** Error path coverage, integration tests, fixture cleanup
+4. **Testing:** Error path coverage, integration tests, regression tests
+5. **Data Quality:** Citation normalization, OA enrichment, DOI extraction (85.9%)

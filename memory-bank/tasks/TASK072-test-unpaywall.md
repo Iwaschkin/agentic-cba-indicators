@@ -1,6 +1,6 @@
 # [TASK072] - Create test_unpaywall.py
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 
@@ -23,11 +23,15 @@ Comprehensive test suite for Unpaywall API integration module.
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
+| 72.1 | Create test_unpaywall.py | Complete | 2026-01-18 | 9 tests created |
+| 72.2 | Test success case | Complete | 2026-01-18 | Gold, bronze, closed OA statuses |
+| 72.3 | Test error cases | Complete | 2026-01-18 | 404, 429, timeout tests |
+| 72.4 | Test no email configured | Complete | 2026-01-18 | Returns None gracefully |
 | 72.1 | Create test file structure | Not Started | - | Imports, fixtures |
 | 72.2 | Test fetch success case | Not Started | - | Mock valid OA response |
 | 72.3 | Test 404 error handling | Not Started | - | DOI not found |

@@ -18,6 +18,7 @@ from strands import tool
 from agentic_cba_indicators.logging_config import get_logger
 from agentic_cba_indicators.paths import get_kb_path
 
+from ._embedding import EmbeddingError
 from ._embedding import get_embedding as _get_embedding
 
 if TYPE_CHECKING:
@@ -281,7 +282,8 @@ def search_indicators(
         header = f"Found {result_count} matching indicators:\n"
         return header + "\n".join(output_lines)
 
-    except Exception as e:
+    except (ChromaDBError, EmbeddingError) as e:
+        logger.warning("KB search failed: %s", e, exc_info=True)
         return f"Error searching knowledge base: {e!s}"
 
 
@@ -377,7 +379,8 @@ def search_methods(
         header = f"Found {result_count} matching method groups:\n"
         return header + "\n".join(output_lines)
 
-    except Exception as e:
+    except (ChromaDBError, EmbeddingError) as e:
+        logger.warning("Method search failed: %s", e, exc_info=True)
         return f"Error searching methods: {e!s}"
 
 
@@ -459,7 +462,8 @@ def get_indicator_details(indicator_id: int) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Indicator retrieval failed: %s", e, exc_info=True)
         return f"Error retrieving indicator: {e!s}"
 
 
@@ -524,7 +528,8 @@ def list_knowledge_base_stats() -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Stats retrieval failed: %s", e, exc_info=True)
         return f"Error getting stats: {e!s}"
 
 
@@ -617,7 +622,8 @@ def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3)
         header = f"Found {result_count} matching use case documents:\n"
         return header + "\n".join(output_lines)
 
-    except Exception as e:
+    except (ChromaDBError, EmbeddingError) as e:
+        logger.warning("Use case search failed: %s", e, exc_info=True)
         return f"Error searching use cases: {e!s}"
 
 
@@ -690,16 +696,29 @@ def get_usecase_details(use_case_slug: str) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Use case retrieval failed: %s", e, exc_info=True)
         return f"Error retrieving use case: {e!s}"
 
 
 def _resolve_indicator_id(indicator: str | int) -> tuple[int | None, str | None]:
-    """
-    Resolve an indicator name or ID to a valid indicator ID.
+    """Resolve an indicator name or ID to a valid indicator ID.
+
+    Takes either a numeric ID or a textual indicator name and validates it
+    against the knowledge base. For names, uses semantic search to find
+    the best matching indicator.
+
+    Args:
+        indicator: Either a numeric indicator ID (1-224) or a text name
+            to search for (e.g., "Soil organic carbon").
 
     Returns:
-        Tuple of (indicator_id, indicator_name) or (None, error_message)
+        A tuple of (indicator_id, name_or_error) where:
+        - On success: (valid_id, matched_name) - matched_name is None if ID was numeric
+        - On failure: (None, error_message) describing why resolution failed
+
+    Note:
+        Uses _INDICATOR_MATCH_THRESHOLD (0.7) for semantic similarity cutoff.
     """
     # If already an int, validate it exists
     if isinstance(indicator, int):
@@ -830,7 +849,8 @@ def get_usecases_by_indicator(indicator: str) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except (ChromaDBError, EmbeddingError) as e:
+        logger.warning("Indicator search failed: %s", e, exc_info=True)
         return f"Error searching by indicator: {e!s}"
 
 
@@ -1002,7 +1022,8 @@ def find_indicators_by_principle(
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Principle search failed: %s", e, exc_info=True)
         return f"Error searching by principle: {e!s}"
 
 
@@ -1163,7 +1184,8 @@ def find_feasible_methods(
 
         return "\n".join(output)
 
-    except Exception as e:
+    except (ChromaDBError, EmbeddingError) as e:
+        logger.warning("Method filter failed: %s", e, exc_info=True)
         return f"Error filtering methods: {e!s}"
 
 
@@ -1270,7 +1292,8 @@ def list_indicators_by_component(component: str, n_results: int = 30) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Component listing failed: %s", e, exc_info=True)
         return f"Error listing indicators: {e!s}"
 
 
@@ -1485,7 +1508,8 @@ def export_indicator_selection(
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Export generation failed: %s", e, exc_info=True)
         return f"Error generating export: {e!s}"
 
 
@@ -1556,7 +1580,8 @@ def list_available_classes() -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Class listing failed: %s", e, exc_info=True)
         return f"Error listing classes: {e!s}"
 
 
@@ -1662,7 +1687,8 @@ def find_indicators_by_class(class_name: str, n_results: int = 30) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Class search failed: %s", e, exc_info=True)
         return f"Error finding indicators by class: {e!s}"
 
 
@@ -1786,7 +1812,8 @@ def find_indicators_by_measurement_approach(approach: str, n_results: int = 30) 
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Approach search failed: %s", e, exc_info=True)
         return f"Error finding indicators by approach: {e!s}"
 
 
@@ -1991,5 +2018,6 @@ def compare_indicators(indicator_ids: list[int]) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except ChromaDBError as e:
+        logger.warning("Comparison failed: %s", e, exc_info=True)
         return f"Error comparing indicators: {e!s}"

@@ -301,8 +301,6 @@ def get_commodity_production(
         elif e.response.status_code == 404:
             return f"No data found for commodity '{commodity}' in {year}."
         return f"API error: {e.response.status_code}"
-    except Exception as e:
-        return f"Error fetching commodity data: {e!s}"
 
 
 @tool
@@ -406,8 +404,8 @@ def get_commodity_trade(
 
     except ValueError as e:
         return str(e)
-    except Exception as e:
-        return f"Error fetching trade data: {e!s}"
+    except httpx.HTTPStatusError as e:
+        return f"API error: {e.response.status_code}"
 
 
 @tool
@@ -497,8 +495,8 @@ def compare_commodity_producers(commodity: str, year: int | None = None) -> str:
 
     except ValueError as e:
         return str(e)
-    except Exception as e:
-        return f"Error comparing producers: {e!s}"
+    except httpx.HTTPStatusError as e:
+        return f"API error: {e.response.status_code}"
 
 
 @tool
@@ -625,5 +623,6 @@ def search_commodity_data(query: str, n_results: int = 10) -> str:
             "Try broader terms or use list_fas_commodities() to see all options."
         )
 
+    return "\n".join(output)
     return "\n".join(output)
     return "\n".join(output)

@@ -1,6 +1,6 @@
 # [TASK070] - Add oa_only filter to search_methods()
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 
@@ -21,13 +21,13 @@ Add parameter to filter search_methods() results to only indicators with OA cita
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
-| 70.1 | Add oa_only parameter | Not Started | - | Default False for backward compatibility |
-| 70.2 | Implement where clause filtering | Not Started | - | where={"has_oa_citations": True} |
+| 70.1 | Add oa_only parameter | Complete | 2026-01-18 | Default False for backward compatibility |
+| 70.2 | Implement where clause filtering | Complete | 2026-01-18 | where={"has_oa_citations": True} |
 | 70.3 | Update docstring | Not Started | - | Document filtering behavior |
 | 70.4 | Test with/without filter | Not Started | - | Validate result counts |
 

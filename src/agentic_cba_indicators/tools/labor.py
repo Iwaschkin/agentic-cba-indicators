@@ -251,8 +251,6 @@ def get_labor_indicators(country: str, indicators: str | None = None) -> str:
 
     except APIError as e:
         return format_error(e, "fetching labor indicators")
-    except Exception as e:
-        return format_error(e, "processing labor data")
 
 
 @tool
@@ -367,8 +365,6 @@ def get_employment_by_gender(country: str, year: int | None = None) -> str:
 
     except APIError as e:
         return format_error(e, "fetching gender employment data")
-    except Exception as e:
-        return format_error(e, "processing gender data")
 
 
 @tool
@@ -471,8 +467,6 @@ def get_labor_time_series(
 
     except APIError as e:
         return format_error(e, "fetching labor time series")
-    except Exception as e:
-        return format_error(e, "processing time series data")
 
 
 @tool

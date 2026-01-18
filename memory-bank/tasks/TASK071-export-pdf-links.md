@@ -1,6 +1,6 @@
 # [TASK071] - Add PDF links to export_indicator_selection()
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 
@@ -22,12 +22,12 @@ Include Open Access PDF links and badges in markdown export output.
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
-| 71.1 | Locate citation display in export | Not Started | - | Find where citations are formatted |
+| 71.1 | Locate citation display in export | Complete | 2026-01-18 | Found References section in export |
 | 71.2 | Add OA badge logic | Not Started | - | 🔓 for is_oa=True |
 | 71.3 | Add PDF link logic | Not Started | - | [PDF](url) if pdf_url present |
 | 71.4 | Test export with OA citations | Not Started | - | Validate markdown rendering |

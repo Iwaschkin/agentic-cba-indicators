@@ -1,6 +1,6 @@
 # [TASK067] - Add --preview-oa CLI flag
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 

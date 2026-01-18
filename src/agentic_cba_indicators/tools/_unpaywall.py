@@ -80,8 +80,9 @@ def fetch_unpaywall_metadata(doi: str) -> UnpaywallMetadata | None:
                 "Unpaywall HTTP error %s for DOI: %s", e.response.status_code, doi
             )
         return None
-    except Exception as e:
-        logger.warning("Unpaywall error for DOI %s: %s", doi, e)
+    except ValueError:
+        # json.JSONDecodeError inherits from ValueError
+        logger.warning("Unpaywall returned invalid JSON for DOI: %s", doi)
         return None
 
 

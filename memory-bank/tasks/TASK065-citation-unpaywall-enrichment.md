@@ -1,6 +1,6 @@
 # [TASK065] - Add enrich_from_unpaywall() method
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 

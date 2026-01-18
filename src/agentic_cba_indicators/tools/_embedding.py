@@ -26,12 +26,13 @@ logger = get_logger(__name__)
 # Supports both local Ollama and Ollama Cloud (https://ollama.com)
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY")  # Optional, for Ollama Cloud
-EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "nomic-embed-text")
+EMBEDDING_MODEL = os.environ.get("OLLAMA_EMBEDDING_MODEL", "bge-m3")
 
 # Expected embedding dimensions by model (for validation and migration planning)
 # Add new models here when evaluating alternatives
 EMBEDDING_DIMENSIONS: dict[str, int] = {
-    "nomic-embed-text": 768,
+    "bge-m3": 1024,  # Default: 8K context, multilingual, multi-granularity
+    "nomic-embed-text": 768,  # 2K context, proven stable
     "mxbai-embed-large": 1024,
     "snowflake-arctic-embed:335m": 1024,
     "qwen3-embedding:0.6b": 1024,
@@ -45,9 +46,9 @@ def get_expected_dimensions() -> int:
     Get expected embedding dimensions for the currently configured model.
 
     Returns:
-        Expected dimension count for EMBEDDING_MODEL, or 768 as default
+        Expected dimension count for EMBEDDING_MODEL, or 1024 as default
     """
-    return EMBEDDING_DIMENSIONS.get(EMBEDDING_MODEL, 768)
+    return EMBEDDING_DIMENSIONS.get(EMBEDDING_MODEL, 1024)
 
 
 # Rate limiting for embedding calls (prevents flooding Ollama)
@@ -59,8 +60,9 @@ _last_embedding_time: float = 0.0
 _EMBEDDING_RETRIES = int(os.environ.get("OLLAMA_EMBEDDING_RETRIES", "3"))
 _EMBEDDING_BACKOFF = float(os.environ.get("OLLAMA_EMBEDDING_BACKOFF", "1.0"))
 
-# Max characters for embedding (nomic-embed-text has ~8k token limit)
-MAX_EMBEDDING_CHARS = int(os.environ.get("OLLAMA_MAX_EMBEDDING_CHARS", "6000"))
+# Max characters for embedding (bge-m3 supports 8192 tokens, ~32k chars)
+# Conservative default: 24000 chars (~6000 tokens, 75% of 8K capacity)
+MAX_EMBEDDING_CHARS = int(os.environ.get("OLLAMA_MAX_EMBEDDING_CHARS", "24000"))
 
 # Timeout settings for embedding requests (in seconds)
 # Single embedding: 60s default, Batch embedding: 120s default (larger payloads)
@@ -68,6 +70,10 @@ _EMBEDDING_TIMEOUT = float(os.environ.get("OLLAMA_EMBEDDING_TIMEOUT", "60.0"))
 _BATCH_EMBEDDING_TIMEOUT = float(
     os.environ.get("OLLAMA_BATCH_EMBEDDING_TIMEOUT", "120.0")
 )
+
+# Minimum acceptable embedding dimension
+# Most models produce 768+ dimensions; 64 is a sanity check for valid embeddings
+_MIN_EMBEDDING_DIMENSION = 64
 
 
 class EmbeddingError(Exception):
@@ -166,11 +172,11 @@ def get_embedding(text: str) -> list[float]:
                         f"Ollama embedding is empty or invalid: {type(embedding)}"
                     )
 
-                # Validate embedding dimensions (nomic-embed-text is 768-dimensional)
-                # Allow some flexibility for other models
-                if len(embedding) < 64:
+                # Validate embedding dimensions (bge-m3 is 1024-dimensional)
+                # Allow flexibility for other models (minimum 64 dimensions)
+                if len(embedding) < _MIN_EMBEDDING_DIMENSION:
                     raise EmbeddingError(
-                        f"Embedding dimension too small: {len(embedding)} (expected >= 64)"
+                        f"Embedding dimension too small: {len(embedding)} (expected >= {_MIN_EMBEDDING_DIMENSION})"
                     )
 
                 return embedding
@@ -266,7 +272,7 @@ def get_embeddings_batch(
                     single_resp.raise_for_status()
                     payload = single_resp.json()
                     embeddings.append(payload["embeddings"][0])
-                except Exception as e:
+                except httpx.HTTPError as e:
                     if strict:
                         raise RuntimeError(
                             f"Embedding failed for doc {i} (len={len(text)})"

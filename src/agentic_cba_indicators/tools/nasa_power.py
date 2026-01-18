@@ -200,8 +200,6 @@ def get_agricultural_climate(location: str, start_date: str, end_date: str) -> s
 
     except APIError as e:
         return format_error(e, "fetching agricultural climate data")
-    except Exception as e:
-        return format_error(e, "processing climate data")
 
 
 @tool
@@ -303,8 +301,6 @@ def get_solar_radiation(location: str, year: int) -> str:
 
     except APIError as e:
         return format_error(e, "fetching solar radiation data")
-    except Exception as e:
-        return format_error(e, "processing solar data")
 
 
 @tool
@@ -407,5 +403,3 @@ def get_evapotranspiration(location: str, start_date: str, end_date: str) -> str
 
     except APIError as e:
         return format_error(e, "fetching evapotranspiration data")
-    except Exception as e:
-        return format_error(e, "calculating evapotranspiration")

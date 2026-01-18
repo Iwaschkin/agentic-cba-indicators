@@ -212,8 +212,6 @@ def get_soil_properties(
 
     except APIError as e:
         return format_error(e, "fetching soil properties")
-    except Exception as e:
-        return format_error(e, "processing soil data")
 
 
 @tool
@@ -324,8 +322,6 @@ def get_soil_carbon(location: str) -> str:
 
     except APIError as e:
         return format_error(e, "fetching soil carbon data")
-    except Exception as e:
-        return format_error(e, "processing soil carbon data")
 
 
 @tool
@@ -438,5 +434,3 @@ def get_soil_texture(location: str, depth: str = "0-30cm") -> str:
 
     except APIError as e:
         return format_error(e, "fetching soil texture data")
-    except Exception as e:
-        return format_error(e, "processing soil texture data")

@@ -12,7 +12,7 @@ A CLI chatbot that queries weather, climate, socio-economic data, and **CBA ME I
 - **AI Framework:** [strands-agents](https://strandsagents.com/) with multi-provider support
 - **AI Providers:** Ollama (default), Anthropic, OpenAI, AWS Bedrock, Google Gemini
 - **Vector Store:** ChromaDB (XDG-style data directory)
-- **Embeddings:** Ollama `nomic-embed-text` model
+- **Embeddings:** Ollama `bge-m3` model (8K context, 1024 dimensions)
 - **APIs:** Open-Meteo (weather/climate), World Bank API, REST Countries API
 
 ## Quick Start

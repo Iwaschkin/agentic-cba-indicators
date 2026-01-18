@@ -194,8 +194,6 @@ def get_sdg_progress(country: str, goal: int | None = None) -> str:
 
     except APIError as e:
         return format_error(e, "fetching SDG data")
-    except Exception as e:
-        return format_error(e, "processing SDG data")
 
 
 @tool
@@ -287,8 +285,6 @@ def search_sdg_indicators(query: str, goal: int | None = None) -> str:
 
     except APIError as e:
         return format_error(e, "searching SDG indicators")
-    except Exception as e:
-        return format_error(e, "processing SDG search")
 
 
 @tool
@@ -399,8 +395,6 @@ def get_sdg_series_data(series_code: str, country: str, years: int = 10) -> str:
 
     except APIError as e:
         return format_error(e, f"fetching data for {series_code}")
-    except Exception as e:
-        return format_error(e, "processing SDG series data")
 
 
 @tool

@@ -173,8 +173,6 @@ def get_forest_statistics(country: str) -> str:
 
     except APIError as e:
         return format_error(e, "fetching forest statistics")
-    except Exception as e:
-        return format_error(e, "processing forest data")
 
 
 @tool
@@ -224,7 +222,7 @@ def get_crop_production(country: str, crop: str) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except APIError as e:
         return format_error(e, "fetching crop production")
 
 
@@ -276,7 +274,7 @@ def get_land_use(country: str) -> str:
 
         return "\n".join(output)
 
-    except Exception as e:
+    except APIError as e:
         return format_error(e, "fetching land use data")
 
 

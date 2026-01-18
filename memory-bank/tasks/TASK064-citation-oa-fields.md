@@ -1,6 +1,6 @@
 # [TASK064] - Add OA fields to Citation class
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 

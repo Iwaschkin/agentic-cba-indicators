@@ -1,6 +1,6 @@
 # [TASK075] - Update techContext.md with Unpaywall API
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 
@@ -21,13 +21,13 @@ Document Unpaywall API integration in techContext.md.
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
-| 75.1 | Add Unpaywall section to techContext | Not Started | - | After CrossRef section |
-| 75.2 | Document API details | Not Started | - | URL, auth, timeout, fields |
+| 75.1 | Add Unpaywall section to techContext | Complete | 2026-01-18 | After CrossRef section |
+| 75.2 | Document API details | Complete | 2026-01-18 | URL, auth, timeout, fields, OA status table |
 | 75.3 | Reference module path | Not Started | - | _unpaywall.py location |
 | 75.4 | Review for accuracy | Not Started | - | Validate all details |
 

@@ -1,6 +1,6 @@
 # [TASK066] - Create enrich_dois_batch() function
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 

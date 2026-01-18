@@ -406,7 +406,7 @@ def upsert_usecase_docs(
     strict: bool = False,
 ) -> tuple[int, list[str]]:
     """Upsert use case documents to ChromaDB."""
-    # Use cosine distance space for normalized embeddings (nomic-embed-text)
+    # Use cosine distance space for normalized embeddings (bge-m3)
     collection = client.get_or_create_collection(
         name="usecases",
         metadata={"hnsw:space": "cosine"},

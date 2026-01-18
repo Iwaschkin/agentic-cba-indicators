@@ -94,7 +94,7 @@ The knowledge base uses **Ollama for embeddings** (semantic search), which is se
 ```bash
 # Start Ollama locally
 ollama serve
-ollama pull nomic-embed-text
+ollama pull bge-m3
 
 # Run with any LLM provider - embeddings use local Ollama
 agentic-cba --provider=anthropic
@@ -119,7 +119,7 @@ agentic-cba --provider=anthropic
 |----------|-------------|---------|
 | `OLLAMA_HOST` | Ollama server URL | `http://localhost:11434` |
 | `OLLAMA_API_KEY` | Bearer token (for Ollama Cloud) | *(none)* |
-| `OLLAMA_EMBEDDING_MODEL` | Embedding model name | `nomic-embed-text` |
+| `OLLAMA_EMBEDDING_MODEL` | Embedding model name | `bge-m3` |
 
 > ⚠️ **Note**: If you change the embedding model or switch between local/cloud Ollama, rebuild the knowledge base:
 > ```bash

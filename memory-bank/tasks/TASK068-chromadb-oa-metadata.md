@@ -1,6 +1,6 @@
 # [TASK068] - Add OA metadata to ChromaDB
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 
@@ -21,13 +21,13 @@ Store OA counts and flags in ChromaDB method group metadata for filtering.
 
 ## Progress Tracking
 
-**Overall Status:** Not Started - 0%
+**Overall Status:** Completed - 100%
 
 ### Subtasks
 | ID | Description | Status | Updated | Notes |
 |----|-------------|--------|---------|-------|
-| 68.1 | Update _build_method_doc() | Not Started | - | Count OA citations |
-| 68.2 | Add fields to metadata dict | Not Started | - | oa_count, has_oa_citations |
+| 68.1 | Update _build_method_doc() | Complete | 2026-01-18 | Count OA citations |
+| 68.2 | Add fields to metadata dict | Complete | 2026-01-18 | oa_count, has_oa_citations |
 | 68.3 | Validate persistence | Not Started | - | Check _upsert_methods_collection |
 | 68.4 | Rebuild KB and verify | Not Started | - | Run ingestion with --enrich-oa |
 

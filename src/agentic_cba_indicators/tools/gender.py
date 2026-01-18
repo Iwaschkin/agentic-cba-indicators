@@ -290,8 +290,6 @@ def get_gender_indicators(country: str, category: str | None = None) -> str:
 
     except APIError as e:
         return format_error(e, "fetching gender indicators")
-    except Exception as e:
-        return format_error(e, "processing gender data")
 
 
 @tool
@@ -404,8 +402,6 @@ def compare_gender_gaps(country: str) -> str:
 
     except APIError as e:
         return format_error(e, "fetching gender gap data")
-    except Exception as e:
-        return format_error(e, "processing gender gaps")
 
 
 @tool
@@ -500,8 +496,6 @@ def get_gender_time_series(
 
     except APIError as e:
         return format_error(e, "fetching gender time series")
-    except Exception as e:
-        return format_error(e, "processing time series")
 
 
 @tool

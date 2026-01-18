@@ -86,6 +86,21 @@ class TestNormalizeDOI:
             ("not a doi", None),
             ("10.123/too-short-prefix", None),  # Prefix < 4 digits
             ("http://example.com/paper", None),
+            # Old Elsevier format with parentheses (issue #REGRESSION)
+            # These DOIs were being truncated at the first ')' before fix
+            ("10.1016/0011-7471(64)90001-4", "10.1016/0011-7471(64)90001-4"),
+            ("10.1016/0167-7012(94)00076-X", "10.1016/0167-7012(94)00076-x"),
+            ("10.1016/s1002-0160(18)60017-9", "10.1016/s1002-0160(18)60017-9"),
+            # J. Vegetation Science format with brackets (issue #REGRESSION)
+            (
+                "10.1658/1100-9233(2007)18[315:AOMETS]2.0.CO;2",
+                "10.1658/1100-9233(2007)18[315:aomets]2.0.co;2",
+            ),
+            # Trailing punctuation should be stripped
+            ("10.5091/plecevo.2011.472.", "10.5091/plecevo.2011.472"),
+            ("10.1234/abc.def,", "10.1234/abc.def"),
+            ("10.1234/abc.def;", "10.1234/abc.def"),
+            ("10.1234/abc.def:", "10.1234/abc.def"),
         ],
     )
     def test_normalize_doi(self, input_doi, expected):

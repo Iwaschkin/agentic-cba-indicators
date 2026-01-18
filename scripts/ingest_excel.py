@@ -154,14 +154,17 @@ CRITERIA_COLUMNS = {
 # DOI Normalization (ISO 26324 / DOI Handbook)
 # =============================================================================
 
-# DOI regex: matches 10.XXXX/anything format per DOI Handbook
+# DOI regex: matches 10.XXXX/anything format per DOI Handbook (ISO 26324)
 # Prefix must be 4+ digits after "10.", suffix can contain any printable chars
+# NOTE: The spec allows parentheses and brackets in DOIs (e.g., old Elsevier format
+# "10.1016/0011-7471(64)90001-4"), so we only exclude whitespace and angle brackets.
+# Trailing punctuation (.,;:) is stripped in normalize_doi() after capture.
 DOI_PATTERN = re.compile(
     r"""
     (?:https?://)?           # Optional https:// or http://
     (?:dx\.)?                # Optional legacy dx. prefix
     (?:doi\.org/)?           # Optional doi.org/
-    (10\.\d{4,}/[^\s\]\)]+)  # Capture: 10.XXXX/identifier (4+ digit prefix)
+    (10\.\d{4,}/[^\s<>]+)    # Capture: 10.XXXX/identifier (allow parens/brackets)
     """,
     re.VERBOSE | re.IGNORECASE,
 )
@@ -196,8 +199,11 @@ def normalize_doi(raw: str) -> str | None:
     # Try to match DOI pattern
     match = DOI_PATTERN.search(raw)
     if match:
+        # Get raw DOI and strip trailing punctuation (.,;:) which may be
+        # captured when DOI appears at end of sentence
+        doi = match.group(1).rstrip(".,;:")
         # Return lowercase canonical form (DOIs are case-insensitive per spec)
-        return match.group(1).lower()
+        return doi.lower()
 
     return None
 
@@ -216,7 +222,8 @@ def extract_doi_from_text(text: str) -> str | None:
         return None
     match = DOI_PATTERN.search(text)
     if match:
-        return match.group(1).lower()
+        # Strip trailing punctuation and return lowercase
+        return match.group(1).rstrip(".,;:").lower()
     return None
 
 
@@ -955,7 +962,7 @@ def upsert_indicators(
     strict: bool = False,
 ) -> tuple[int, list[str]]:
     """Upsert indicator documents to ChromaDB."""
-    # Use cosine distance space for normalized embeddings (nomic-embed-text)
+    # Use cosine distance space for normalized embeddings (bge-m3)
     # This provides proper similarity scoring in range [0, 1]
     collection = client.get_or_create_collection(
         name="indicators",
@@ -1017,7 +1024,7 @@ def upsert_methods(
     strict: bool = False,
 ) -> tuple[int, list[str]]:
     """Upsert grouped method documents to ChromaDB."""
-    # Use cosine distance space for normalized embeddings (nomic-embed-text)
+    # Use cosine distance space for normalized embeddings (bge-m3)
     collection = client.get_or_create_collection(
         name="methods",
         metadata={"hnsw:space": "cosine"},
@@ -1264,7 +1271,7 @@ def ingest(
 
 def enrich_dois_batch(
     citations: list[Citation],
-    preview_only: bool = False,
+    skip_mutation: bool = False,
     verbose: bool = False,
 ) -> tuple[int, int, int]:
     """
@@ -1278,7 +1285,7 @@ def enrich_dois_batch(
 
     Args:
         citations: List of Citation objects to enrich
-        preview_only: If True, only show stats without modifying citations
+        skip_mutation: If True, still call APIs but don't modify Citation objects
         verbose: If True, show per-DOI progress
 
     Returns:
@@ -1302,7 +1309,7 @@ def enrich_dois_batch(
         return (0, 0, 0)
 
     print(f"Enriching {total_dois} unique DOIs via CrossRef + Unpaywall...")
-    if preview_only:
+    if skip_mutation:
         print("(Preview mode - citations will not be modified)")
 
     crossref_found = 0
@@ -1316,31 +1323,29 @@ def enrich_dois_batch(
 
         enriched_this_doi = False
 
-        # CrossRef enrichment
-        if not preview_only:
-            from agentic_cba_indicators.tools._crossref import fetch_crossref_metadata
+        # CrossRef enrichment - always fetch
+        from agentic_cba_indicators.tools._crossref import fetch_crossref_metadata
 
-            cf_meta = fetch_crossref_metadata(doi)
-            if cf_meta:
-                crossref_found += 1
+        cf_meta = fetch_crossref_metadata(doi)
+        if cf_meta:
+            crossref_found += 1
+            if not skip_mutation:
                 for cite in doi_to_citations[doi]:
                     cite.enrich_from_crossref(cf_meta)
-                enriched_this_doi = True
-                if verbose and cf_meta.title:
-                    print(f"    CrossRef: Found - {cf_meta.title[:60]}...")
+            enriched_this_doi = True
+            if verbose and cf_meta.title:
+                print(f"    CrossRef: Found - {cf_meta.title[:60]}...")
 
-        # Unpaywall enrichment
-        if not preview_only:
-            uw_meta = fetch_unpaywall_metadata(doi)
-            if uw_meta:
-                unpaywall_found += 1
+        # Unpaywall enrichment - always fetch
+        uw_meta = fetch_unpaywall_metadata(doi)
+        if uw_meta:
+            unpaywall_found += 1
+            if not skip_mutation:
                 for cite in doi_to_citations[doi]:
                     cite.enrich_from_unpaywall(uw_meta)
-                enriched_this_doi = True
-                if verbose and uw_meta.is_oa:
-                    print(
-                        f"    Unpaywall: OA ({uw_meta.oa_status}) - {uw_meta.pdf_url}"
-                    )
+            enriched_this_doi = True
+            if verbose and uw_meta.is_oa:
+                print(f"    Unpaywall: OA ({uw_meta.oa_status}) - {uw_meta.pdf_url}")
 
         if enriched_this_doi:
             total_enriched += 1
@@ -1405,8 +1410,8 @@ def enrich_citations(
     if limit:
         all_citations = all_citations[:limit]
 
-    # Run batch enrichment (CrossRef only)
-    enrich_dois_batch(all_citations, preview_only=True, verbose=verbose)
+    # Run batch enrichment (preview - fetch APIs but don't modify citations)
+    enrich_dois_batch(all_citations, skip_mutation=True, verbose=verbose)
 
 
 def preview_oa_coverage(
@@ -1447,9 +1452,9 @@ def preview_oa_coverage(
     if limit:
         all_citations = all_citations[:limit]
 
-    # Run batch enrichment (both APIs)
+    # Run batch enrichment (both APIs - mutate citations for OA stats)
     _crossref_found, _unpaywall_found, _total_enriched = enrich_dois_batch(
-        all_citations, preview_only=False, verbose=verbose
+        all_citations, skip_mutation=False, verbose=verbose
     )
 
     # Calculate OA stats

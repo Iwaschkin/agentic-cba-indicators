@@ -1,6 +1,6 @@
 # [TASK062] - Migrate CrossRef to secrets and add Unpaywall
 
-**Status:** Not Started
+**Status:** Completed
 **Added:** 2026-01-18
 **Updated:** 2026-01-18
 

@@ -8,6 +8,8 @@ This directory contains scripts for building and maintaining the CBA ME Indicato
 
 - [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
+- [Embedding Model](#embedding-model)
+- [Citation Management](#citation-management)
 - [Scripts Overview](#scripts-overview)
 - [Detailed Documentation](#detailed-documentation)
   - [ingest_excel.py](#ingest_excelpy---master-indicators-ingestion)
@@ -15,6 +17,10 @@ This directory contains scripts for building and maintaining the CBA ME Indicato
 - [Data Model](#data-model)
 - [Troubleshooting](#troubleshooting)
 - [Adding New Data](#adding-new-data)
+- [Environment Variables](#environment-variables)
+  - [Path Configuration](#path-configuration)
+  - [Ollama Configuration](#ollama-configuration)
+  - [Citation Enrichment APIs](#citation-enrichment-apis)
 
 ---
 
@@ -25,7 +31,7 @@ This directory contains scripts for building and maintaining the CBA ME Indicato
 ```bash
 # 1. Ensure Ollama is running with the embedding model
 ollama serve
-ollama pull nomic-embed-text
+ollama pull bge-m3
 
 # 2. Ingest the master indicator library (required)
 python scripts/ingest_excel.py
@@ -43,6 +49,9 @@ python scripts/ingest_usecases.py
 | `python scripts/ingest_excel.py --clear` | Clear collections and rebuild from scratch |
 | `python scripts/ingest_excel.py --dry-run` | Preview what would be indexed |
 | `python scripts/ingest_excel.py --verbose` | Show detailed progress |
+| `python scripts/ingest_excel.py --enrich` | Ingestion with CrossRef/Unpaywall enrichment |
+| `python scripts/ingest_excel.py --preview-citations` | Preview DOI extraction stats |
+| `python scripts/ingest_excel.py --preview-oa` | Preview Open Access coverage |
 | `python scripts/ingest_usecases.py` | Ingest use case projects |
 | `python scripts/ingest_usecases.py --clear` | Clear usecases collection first |
 
@@ -61,7 +70,7 @@ agentic-cba
 ### Required
 
 - **Python 3.11+** with the agentic-cba-indicators package installed
-- **Ollama** running locally with the `nomic-embed-text` model
+- **Ollama** running locally with the `bge-m3` model (8K context, 1024 dimensions)
 - **Source data**: `cba_inputs/CBA ME Indicators List.xlsx`
 
 ### Optional
@@ -77,12 +86,319 @@ agentic-cba
 # Start Ollama server
 ollama serve
 
-# Pull the embedding model (768-dimension embeddings)
-ollama pull nomic-embed-text
+# Pull the embedding model (1024-dimension embeddings, 8K context)
+ollama pull bge-m3
 
 # Verify it's working
-curl http://localhost:11434/api/embed -d '{"model": "nomic-embed-text", "input": "test"}'
+curl http://localhost:11434/api/embed -d '{"model": "bge-m3", "input": "test"}'
 ```
+
+---
+
+## Embedding Model
+
+The knowledge base uses **bge-m3** from BAAI (Beijing Academy of Artificial Intelligence) for semantic embeddings. This model was selected for its superior context length and multilingual capabilities.
+
+### Model Specifications
+
+| Property | Value |
+|----------|-------|
+| **Model** | `bge-m3` (BGE-M3-Embedding) |
+| **Provider** | BAAI via Ollama |
+| **Context Length** | **8,192 tokens** (~32,000 characters) |
+| **Embedding Dimensions** | **1,024** |
+| **Model Size** | 1.2 GB |
+| **Multilingual** | 100+ languages |
+
+### Why bge-m3?
+
+BGE-M3 is distinguished for its **M3** capabilities:
+
+1. **Multi-Functionality**: Supports dense retrieval, multi-vector retrieval, and sparse retrieval simultaneously
+2. **Multi-Linguality**: Works across 100+ languages without translation
+3. **Multi-Granularity**: Handles inputs from short sentences to long documents (up to 8K tokens)
+
+### Context Length Comparison
+
+| Model | Context | Dimensions | Size | Notes |
+|-------|---------|------------|------|-------|
+| **bge-m3** (current) | **8K tokens** | 1024 | 1.2GB | Best for long documents |
+| nomic-embed-text (previous) | 2K tokens | 768 | 274MB | Good general-purpose |
+| snowflake-arctic-embed | 512 tokens | 1024 | 669MB | Short text only |
+| mxbai-embed-large | 512 tokens | 1024 | 670MB | Short text only |
+| all-minilm | 256 tokens | 384 | 46MB | Lightweight, limited |
+
+### Character Limits
+
+The ingestion scripts enforce these limits to ensure reliable embedding:
+
+| Limit | Value | Usage |
+|-------|-------|-------|
+| `MAX_EMBEDDING_CHARS` | 24,000 | Default max per document |
+| PDF summary extraction | 4,000 | Use case project summaries |
+
+The 24,000 character limit is ~75% of the theoretical 8K token capacity, providing a safety margin for tokenization variance.
+
+### Switching Embedding Models
+
+> ⚠️ **Warning**: Changing the embedding model requires a **full knowledge base rebuild** because embeddings from different models are incompatible.
+
+To switch models:
+
+```bash
+# 1. Set the new model
+export OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+
+# 2. Pull the model
+ollama pull nomic-embed-text
+
+# 3. Rebuild the knowledge base (required!)
+python scripts/ingest_excel.py --clear
+python scripts/ingest_usecases.py --clear
+```
+
+### Supported Models
+
+The following models are pre-configured with correct dimensions:
+
+```python
+EMBEDDING_DIMENSIONS = {
+    "bge-m3": 1024,           # Default: 8K context, multilingual
+    "nomic-embed-text": 768,  # 2K context, proven stable
+    "mxbai-embed-large": 1024,
+    "snowflake-arctic-embed:335m": 1024,
+    "qwen3-embedding:0.6b": 1024,
+    "embeddinggemma": 768,
+    "all-minilm:33m": 384,
+}
+```
+
+To use an unlisted model, add it to `EMBEDDING_DIMENSIONS` in `src/agentic_cba_indicators/tools/_embedding.py`.
+
+---
+
+## Citation Management
+
+The ingestion scripts include comprehensive citation handling with DOI normalization, metadata enrichment from CrossRef, and Open Access status from Unpaywall.
+
+### Citation Pipeline Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    EXCEL SOURCE                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  Methods Sheet columns:                                          │
+│  ├── DOI, DOI.2, DOI.3, DOI.4, DOI.5                            │
+│  ├── Citation, Citation.2, Citation.3, Citation.4, Citation.5   │
+│  └── Unnamed: 32, 33 (spillover columns)                        │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    DOI NORMALIZATION                             │
+├─────────────────────────────────────────────────────────────────┤
+│  1. Extract DOI from explicit DOI columns                        │
+│  2. Extract embedded DOIs from citation text                     │
+│  3. Normalize to canonical form: 10.xxxx/yyyy (lowercase)       │
+│  4. Generate canonical URL: https://doi.org/10.xxxx/yyyy        │
+│                                                                  │
+│  Supported input formats:                                        │
+│  ├── 10.1234/abc                                                │
+│  ├── doi: 10.1234/abc                                           │
+│  ├── DOI:10.1234/abc (no space)                                 │
+│  ├── https://doi.org/10.1234/ABC                                │
+│  └── http://dx.doi.org/10.1234/abc                              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ (optional --enrich flag)
+┌─────────────────────────────────────────────────────────────────┐
+│                    METADATA ENRICHMENT                           │
+├─────────────────────────────────────────────────────────────────┤
+│  CrossRef API:                                                   │
+│  ├── Title (full article title)                                 │
+│  ├── Authors (list of names)                                    │
+│  ├── Journal name                                               │
+│  ├── Publication year                                           │
+│  ├── Abstract (when available)                                  │
+│  └── License URL                                                │
+│                                                                  │
+│  Unpaywall API:                                                  │
+│  ├── is_oa (boolean)                                            │
+│  ├── oa_status (gold, green, hybrid, bronze, closed)            │
+│  ├── pdf_url (best OA PDF location)                             │
+│  ├── license (CC-BY, CC-BY-NC, etc.)                            │
+│  └── version (publishedVersion, acceptedVersion)                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Citation Commands
+
+| Command | Description |
+|---------|-------------|
+| `--preview-citations` | Preview DOI extraction stats (no KB changes) |
+| `--enrich-citations` | Fetch CrossRef metadata (preview only) |
+| `--enrich-citations --limit 10` | Test enrichment with 10 DOIs |
+| `--preview-oa` | Preview Open Access coverage via Unpaywall |
+| `--enrich` | Full ingestion with CrossRef+Unpaywall enrichment |
+
+### Preview Citations
+
+Validate DOI extraction before running full ingestion:
+
+```bash
+python scripts/ingest_excel.py --preview-citations
+```
+
+Example output:
+
+```
+============================================================
+Citation Normalization Preview
+============================================================
+Source: cba_inputs/CBA ME Indicators List.xlsx
+
+=== Summary ===
+Total citations: 1024
+With DOI: 880 (85.9%)
+Without DOI: 144 (14.1%)
+DOI extracted from text: 42 (4.1%)
+
+OK: Preview complete (no changes made to KB)
+```
+
+### Preview Open Access Coverage
+
+Check OA availability before enrichment:
+
+```bash
+python scripts/ingest_excel.py --preview-oa
+```
+
+Example output:
+
+```
+============================================================
+Open Access Coverage via Unpaywall API
+============================================================
+Source: cba_inputs/CBA ME Indicators List.xlsx
+
+Fetching metadata for 880 DOIs...
+  CrossRef: 736 found (83.6%)
+  Unpaywall: 524 found (59.5%)
+  Total enriched: 736/880 (83.6%)
+
+Open Access Statistics:
+  Total citations: 880
+  OA citations: 312 (35.5%)
+
+OA Status Breakdown:
+    gold: 156
+    green: 98
+    hybrid: 42
+    bronze: 16
+```
+
+### Citation Enrichment
+
+Fetch metadata from CrossRef API (preview mode):
+
+```bash
+python scripts/ingest_excel.py --enrich-citations --verbose
+```
+
+For production ingestion with enrichment:
+
+```bash
+python scripts/ingest_excel.py --enrich
+```
+
+### DOI Normalization Details
+
+The script normalizes DOIs per ISO 26324 (DOI Handbook):
+
+**Input variants handled:**
+- `10.1016/j.agee.2020.106989` - Plain DOI
+- `DOI: 10.1016/j.agee.2020.106989` - With prefix
+- `https://doi.org/10.1016/J.AGEE.2020.106989` - URL with uppercase
+- `http://dx.doi.org/10.1016/j.agee.2020.106989` - Legacy dx.doi.org
+- `(10.1016/j.agee.2020.106989)` - In parentheses
+
+**Normalized output:**
+- DOI: `10.1016/j.agee.2020.106989` (lowercase)
+- URL: `https://doi.org/10.1016/j.agee.2020.106989`
+
+### API Requirements
+
+#### CrossRef API
+
+CrossRef provides citation metadata. Uses the "polite pool" (faster rate limits) when email is configured:
+
+```bash
+export CROSSREF_EMAIL=your.email@example.com
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CROSSREF_EMAIL` | Email for polite pool access | *(none)* |
+| `CROSSREF_TIMEOUT` | Request timeout (seconds) | `15.0` |
+| `CROSSREF_BATCH_DELAY` | Delay between requests | `0.1` |
+
+**Rate limits:**
+- Without email: ~1 request/second (public pool)
+- With email: ~50 requests/second (polite pool)
+
+#### Unpaywall API
+
+Unpaywall provides Open Access metadata. **Email is required** for API access:
+
+```bash
+export UNPAYWALL_EMAIL=your.email@example.com
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `UNPAYWALL_EMAIL` | **Required** - Email for API access | *(none)* |
+| `UNPAYWALL_TIMEOUT` | Request timeout (seconds) | `10.0` |
+
+### Citation Data Structure
+
+Each citation in the knowledge base includes:
+
+```python
+@dataclass
+class Citation:
+    # Core fields (always present)
+    raw_text: str      # Original text from Excel
+    text: str          # Cleaned citation text
+    doi: str | None    # Normalized DOI
+    url: str | None    # Canonical https://doi.org URL
+
+    # Enrichment fields (from CrossRef)
+    enriched_title: str | None
+    enriched_authors: list[str]
+    enriched_journal: str | None
+    enriched_year: int | None
+    enriched_abstract: str | None
+    enrichment_source: str | None  # "crossref"
+
+    # Open Access fields (from Unpaywall)
+    is_oa: bool
+    oa_status: str | None   # gold, green, hybrid, bronze, closed
+    pdf_url: str | None     # Best OA PDF location
+    license: str | None     # CC-BY, CC-BY-NC, etc.
+    version: str | None     # publishedVersion, acceptedVersion
+    host_type: str | None   # publisher, repository
+```
+
+### OA Status Types
+
+| Status | Description |
+|--------|-------------|
+| `gold` | Published in an open-access journal |
+| `green` | Self-archived in repository (preprint/postprint) |
+| `hybrid` | Open access in a subscription journal |
+| `bronze` | Free to read but no open license |
+| `closed` | Not openly accessible |
 
 ---
 
@@ -113,7 +429,7 @@ curl http://localhost:11434/api/embed -d '{"model": "nomic-embed-text", "input":
 │  1. Load & parse Excel/PDF files                                 │
 │  2. Normalize data (flags → booleans, clean text)               │
 │  3. Build RAG documents with stable IDs                         │
-│  4. Generate embeddings via Ollama (nomic-embed-text)           │
+│  4. Generate embeddings via Ollama (bge-m3, 1024-dim)           │
 │  5. Upsert to ChromaDB collections                              │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -397,7 +713,7 @@ Source: E:\DEV\GIT\strands\cba_inputs\example
 Target: C:\Users\david\AppData\Local\agentic-cba\agentic-cba-indicators\kb_data
 
 Testing Ollama connection...
-  ✓ Ollama ready (embedding dim: 768)
+  ✓ Ollama ready (embedding dim: 1024)
 
 Initializing ChromaDB at C:\...\kb_data...
 
@@ -439,7 +755,7 @@ Total documents indexed: 13
 Knowledge Base
 ├── indicators (224 docs)
 │   ├── Document ID: indicator:{id}
-│   ├── Embedding: 768-dim (nomic-embed-text)
+│   ├── Embedding: 1024-dim (bge-m3)
 │   ├── Text: Indicator description + coverage info
 │   └── Metadata:
 │       ├── id, component, class, unit
@@ -450,7 +766,7 @@ Knowledge Base
 │
 ├── methods (223 docs)
 │   ├── Document ID: methods_for_indicator:{id}
-│   ├── Embedding: 768-dim
+│   ├── Embedding: 1024-dim (bge-m3)
 │   ├── Text: All methods grouped with evaluations
 │   └── Metadata:
 │       ├── indicator_id, indicator, unit
@@ -492,7 +808,7 @@ Error: Ollama connection failed: Connection refused
 **Solution**: Start Ollama and pull the embedding model:
 ```bash
 ollama serve
-ollama pull nomic-embed-text
+ollama pull bge-m3
 ```
 
 #### Excel File Not Found
@@ -619,7 +935,20 @@ Configure Ollama embeddings for local or cloud usage:
 |----------|-------------|---------|
 | `OLLAMA_HOST` | Ollama server URL | `http://localhost:11434` |
 | `OLLAMA_API_KEY` | Bearer token for Ollama Cloud | *(none)* |
-| `OLLAMA_EMBEDDING_MODEL` | Embedding model name | `nomic-embed-text` |
+| `OLLAMA_EMBEDDING_MODEL` | Embedding model name | `bge-m3` |
+| `OLLAMA_MAX_EMBEDDING_CHARS` | Max characters per embedding | `24000` |
+
+### Citation Enrichment APIs
+
+Configure metadata enrichment from CrossRef and Unpaywall:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CROSSREF_EMAIL` | Email for CrossRef polite pool | *(none)* |
+| `CROSSREF_TIMEOUT` | CrossRef request timeout (seconds) | `15.0` |
+| `CROSSREF_BATCH_DELAY` | Delay between CrossRef requests | `0.1` |
+| `UNPAYWALL_EMAIL` | **Required** for Unpaywall API access | *(none)* |
+| `UNPAYWALL_TIMEOUT` | Unpaywall request timeout (seconds) | `10.0` |
 
 ### Examples
 

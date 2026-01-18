@@ -3,6 +3,16 @@ Shared geocoding utilities for location-based tools.
 
 Provides consistent coordinate lookup from city/place names
 using the Open-Meteo geocoding API (free, no API key required).
+
+Thread Safety:
+    This module uses a simple in-memory cache (OrderedDict) that is NOT
+    thread-safe. The module assumes single-threaded operation, which is
+    the default for Strands Agents tool execution.
+
+    If you need thread-safe operation (e.g., async/concurrent requests):
+    - Use threading.Lock around cache access
+    - Or replace _geocode_cache with cachetools.LRUCache + lock
+    - Or use functools.lru_cache (thread-safe in Python 3.2+)
 """
 
 import os
