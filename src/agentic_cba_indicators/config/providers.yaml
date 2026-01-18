@@ -24,7 +24,7 @@ providers:
     model_id: "qwen3:14b"
     temperature: 0.1
     options:
-      num_ctx: 16384 # Context window size
+      num_ctx: 32768 # Context window size (tuned for RTX 4090)
 
   # ---------------------------------------------------------------------------
   # Anthropic - Claude models
@@ -87,7 +87,7 @@ agent:
 
   # Token budget for conversation history (overrides conversation_window if set)
   # Recommended values by model:
-  #   - Ollama (16K context): 8000
+  #   - Ollama (32K context): 16000
   #   - Claude (200K context): 50000
   #   - GPT-4o (128K context): 40000
-  # context_budget: 8000
+  context_budget: 16000
