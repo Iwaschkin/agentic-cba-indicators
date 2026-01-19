@@ -21,6 +21,14 @@ from agentic_cba_indicators.paths import get_user_config_path
 
 logger = logging.getLogger(__name__)
 
+
+class ProviderCreationError(Exception):
+    """Raised when model provider creation fails.
+
+    This exception sanitizes the underlying error to avoid leaking credentials.
+    """
+
+
 # Whitelist of allowed environment variable names for config expansion.
 # This prevents potential injection attacks where an attacker with config
 # file access could exfiltrate arbitrary environment variables.
@@ -248,6 +256,30 @@ def get_agent_config(config: dict[str, Any]) -> AgentConfig:
     )
 
 
+# Pattern for sanitizing potential credentials in error messages (CR-0007)
+_CREDENTIAL_PATTERNS = [
+    re.compile(r"api[_-]?key\s*[:=]\s*['\"]?[^\s'\"]+", re.IGNORECASE),
+    re.compile(r"['\"][a-zA-Z0-9_-]{20,}['\"]"),  # Long strings in quotes (likely keys)
+    re.compile(r"Bearer\s+[^\s]+", re.IGNORECASE),
+]
+
+
+def _sanitize_model_error(error: Exception, provider_name: str) -> str:
+    """Sanitize error message to prevent credential leakage.
+
+    Args:
+        error: The original exception
+        provider_name: Name of the provider for context
+
+    Returns:
+        Sanitized error message safe for logging/display
+    """
+    msg = str(error)
+    for pattern in _CREDENTIAL_PATTERNS:
+        msg = pattern.sub("[REDACTED]", msg)
+    return f"{provider_name} model creation failed: {msg}"
+
+
 def create_model(provider_config: ProviderConfig):
     """
     Create a Strands model instance based on provider configuration.
@@ -290,12 +322,15 @@ def create_model(provider_config: ProviderConfig):
                 "or configure api_key in providers.yaml"
             )
 
-        return AnthropicModel(
-            client_args={"api_key": provider_config.api_key},
-            model_id=provider_config.model_id,
-            max_tokens=provider_config.max_tokens or 4096,
-            params={"temperature": provider_config.temperature},
-        )
+        try:
+            return AnthropicModel(
+                client_args={"api_key": provider_config.api_key},
+                model_id=provider_config.model_id,
+                max_tokens=provider_config.max_tokens or 4096,
+                params={"temperature": provider_config.temperature},
+            )
+        except Exception as e:
+            raise ProviderCreationError(_sanitize_model_error(e, "anthropic")) from None
 
     # --- OpenAI (GPT) ---
     elif name == "openai":
@@ -316,14 +351,17 @@ def create_model(provider_config: ProviderConfig):
         if provider_config.base_url:
             client_args["base_url"] = provider_config.base_url
 
-        return OpenAIModel(
-            client_args=client_args,
-            model_id=provider_config.model_id,
-            params={
-                "max_tokens": provider_config.max_tokens or 4096,
-                "temperature": provider_config.temperature,
-            },
-        )
+        try:
+            return OpenAIModel(
+                client_args=client_args,
+                model_id=provider_config.model_id,
+                params={
+                    "max_tokens": provider_config.max_tokens or 4096,
+                    "temperature": provider_config.temperature,
+                },
+            )
+        except Exception as e:
+            raise ProviderCreationError(_sanitize_model_error(e, "openai")) from None
 
     # --- AWS Bedrock ---
     elif name == "bedrock":
@@ -345,7 +383,10 @@ def create_model(provider_config: ProviderConfig):
         if provider_config.max_tokens:
             kwargs["max_tokens"] = provider_config.max_tokens
 
-        return BedrockModel(**kwargs)
+        try:
+            return BedrockModel(**kwargs)
+        except Exception as e:
+            raise ProviderCreationError(_sanitize_model_error(e, "bedrock")) from None
 
     # --- Google Gemini ---
     elif name == "gemini":
@@ -366,11 +407,14 @@ def create_model(provider_config: ProviderConfig):
         if provider_config.max_tokens:
             params["max_output_tokens"] = provider_config.max_tokens
 
-        return GeminiModel(
-            client_args={"api_key": provider_config.api_key},
-            model_id=provider_config.model_id,
-            params=params,
-        )
+        try:
+            return GeminiModel(
+                client_args={"api_key": provider_config.api_key},
+                model_id=provider_config.model_id,
+                params=params,
+            )
+        except Exception as e:
+            raise ProviderCreationError(_sanitize_model_error(e, "gemini")) from None
 
     # -------------------------------------------------------------------------
     # Unknown Provider

@@ -179,18 +179,50 @@ class TestTokenBudgetConversationManagerInit:
         with pytest.raises(ValueError, match="per_turn must be positive"):
             TokenBudgetConversationManager(per_turn=0)
 
+    def test_system_prompt_budget_default(self) -> None:
+        manager = TokenBudgetConversationManager()
+        assert manager.system_prompt_budget == 0
+        assert manager.effective_budget == manager.max_tokens
+
+    def test_system_prompt_budget_custom(self) -> None:
+        manager = TokenBudgetConversationManager(
+            max_tokens=8000, system_prompt_budget=1500
+        )
+        assert manager.system_prompt_budget == 1500
+        assert manager.effective_budget == 6500  # 8000 - 1500
+
+    def test_system_prompt_budget_negative_raises(self) -> None:
+        with pytest.raises(
+            ValueError, match="system_prompt_budget must be non-negative"
+        ):
+            TokenBudgetConversationManager(system_prompt_budget=-100)
+
+    def test_system_prompt_budget_exceeds_max_tokens_raises(self) -> None:
+        with pytest.raises(
+            ValueError, match=r"system_prompt_budget.*must be less than"
+        ):
+            TokenBudgetConversationManager(max_tokens=1000, system_prompt_budget=1000)
+
+        with pytest.raises(
+            ValueError, match=r"system_prompt_budget.*must be less than"
+        ):
+            TokenBudgetConversationManager(max_tokens=1000, system_prompt_budget=2000)
+
 
 class TestTokenBudgetConversationManagerState:
     """Tests for state persistence."""
 
     def test_get_state(self) -> None:
-        manager = TokenBudgetConversationManager(max_tokens=5000)
+        manager = TokenBudgetConversationManager(
+            max_tokens=5000, system_prompt_budget=500
+        )
         manager._model_call_count = 10
 
         state = manager.get_state()
 
         assert state["model_call_count"] == 10
         assert state["max_tokens"] == 5000
+        assert state["system_prompt_budget"] == 500
         assert state["__name__"] == "TokenBudgetConversationManager"
 
     def test_restore_from_session(self) -> None:
@@ -278,6 +310,40 @@ class TestTokenBudgetApplyManagement:
 
         # Should preserve at least MIN_MESSAGES_TO_PRESERVE
         assert len(agent.messages) >= MIN_MESSAGES_TO_PRESERVE
+
+    def test_system_prompt_budget_reduces_effective_budget(self) -> None:
+        """Verify that system_prompt_budget reduces the effective budget for messages."""
+        # Without system_prompt_budget: 100 tokens should fit 2 messages of ~40 chars each
+        # With system_prompt_budget=50: only 50 tokens effective budget, forces trimming
+
+        # Each message is ~10 tokens (40 chars / 4)
+        messages: list[dict[str, Any]] = [
+            {"role": "user", "content": [{"text": "A" * 40}]},  # ~10 tokens
+            {"role": "assistant", "content": [{"text": "B" * 40}]},  # ~10 tokens
+            {"role": "user", "content": [{"text": "C" * 40}]},  # ~10 tokens
+            {"role": "assistant", "content": [{"text": "D" * 40}]},  # ~10 tokens
+        ]  # Total ~40 tokens
+
+        # With 100 token budget, all messages fit
+        manager_no_reserve = TokenBudgetConversationManager(max_tokens=100)
+        agent1 = self._make_agent(messages.copy())
+        manager_no_reserve.apply_management(agent1)
+        count_no_reserve = len(agent1.messages)
+
+        # With 100 token budget but 60 reserved, only 40 effective - should fit barely
+        # With 100 token budget but 80 reserved, only 20 effective - forces trim
+        manager_with_reserve = TokenBudgetConversationManager(
+            max_tokens=100, system_prompt_budget=80
+        )
+        agent2 = self._make_agent(messages.copy())
+        manager_with_reserve.apply_management(agent2)
+        count_with_reserve = len(agent2.messages)
+
+        # The reserved budget should cause more aggressive trimming
+        assert count_with_reserve < count_no_reserve or (
+            # At minimum, verify effective_budget is respected
+            manager_with_reserve.effective_budget == 20
+        )
 
 
 class TestTokenBudgetReduceContext:

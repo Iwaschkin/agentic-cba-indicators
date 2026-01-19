@@ -162,11 +162,17 @@ def sanitize_user_input(
                 max_length,
             )
         result = result[:max_length]
+
+        # CR-0020: Avoid cutting in middle of grapheme clusters
+        # Back off from combining characters (diacritics, emoji modifiers, ZWJ sequences)
+        while result and unicodedata.category(result[-1]) in ("Mn", "Mc", "Me", "Cf"):
+            result = result[:-1]
+
         # Avoid cutting mid-word if possible
         if " " in result[-50:]:
             # Find last space in final 50 chars
-            last_space = result.rfind(" ", max_length - 50)
-            if last_space > max_length - 100:
+            last_space = result.rfind(" ", max(0, len(result) - 50))
+            if last_space > len(result) - 100:
                 result = result[:last_space] + "..."
 
     return result

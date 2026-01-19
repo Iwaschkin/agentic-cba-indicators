@@ -17,6 +17,7 @@ import httpx
 from strands import tool
 
 from ._http import DEFAULT_TIMEOUT, create_client
+from ._timeout import timeout
 
 # API configuration
 FAS_BASE_URL = "https://api.fas.usda.gov"
@@ -184,6 +185,7 @@ def _resolve_country(country: str) -> str:
 
 
 @tool
+@timeout(30)
 def get_commodity_production(
     commodity: str, country: str = "world", year: int | None = None
 ) -> str:
@@ -304,6 +306,7 @@ def get_commodity_production(
 
 
 @tool
+@timeout(30)
 def get_commodity_trade(
     commodity: str, country: str, years: int = 5, trade_type: str = "both"
 ) -> str:
@@ -409,6 +412,7 @@ def get_commodity_trade(
 
 
 @tool
+@timeout(30)
 def compare_commodity_producers(commodity: str, year: int | None = None) -> str:
     """
     Compare production across major producing countries for a commodity.
@@ -500,6 +504,7 @@ def compare_commodity_producers(commodity: str, year: int | None = None) -> str:
 
 
 @tool
+@timeout(30)
 def list_fas_commodities() -> str:
     """
     List available commodities in the USDA FAS PSD database.
@@ -563,6 +568,7 @@ def list_fas_commodities() -> str:
 
 
 @tool
+@timeout(30)
 def search_commodity_data(query: str, n_results: int = 10) -> str:
     """
     Search for commodity-related information across available datasets.

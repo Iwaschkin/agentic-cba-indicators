@@ -14,6 +14,7 @@ from strands import tool
 
 from ._http import APIError, fetch_json, format_error
 from ._mappings import get_iso3_code
+from ._timeout import timeout
 
 # World Bank API v2 base URL
 WB_API = "https://api.worldbank.org/v2"
@@ -198,6 +199,7 @@ def _get_latest_value(
 
 
 @tool
+@timeout(30)
 def get_gender_indicators(country: str, category: str | None = None) -> str:
     """
     Get gender statistics for a country from World Bank.
@@ -293,6 +295,7 @@ def get_gender_indicators(country: str, category: str | None = None) -> str:
 
 
 @tool
+@timeout(30)
 def compare_gender_gaps(country: str) -> str:
     """
     Compare gender gaps across key indicators for a country.
@@ -405,6 +408,7 @@ def compare_gender_gaps(country: str) -> str:
 
 
 @tool
+@timeout(30)
 def get_gender_time_series(
     country: str,
     indicator: str,
@@ -499,6 +503,7 @@ def get_gender_time_series(
 
 
 @tool
+@timeout(30)
 def search_gender_indicators(query: str) -> str:
     """
     Search available gender indicators by keyword.

@@ -14,6 +14,7 @@ from strands import tool
 
 from ._http import APIError, fetch_json, format_error
 from ._mappings import get_iso3_code
+from ._timeout import timeout
 
 # ILO API base URL
 ILO_API = "https://rplumber.ilo.org"
@@ -138,6 +139,7 @@ def _fetch_indicator(
 
 
 @tool
+@timeout(30)
 def get_labor_indicators(country: str, indicators: str | None = None) -> str:
     """
     Get key labor market indicators for a country.
@@ -222,7 +224,8 @@ def get_labor_indicators(country: str, indicators: str | None = None) -> str:
                         prev = sorted_data[1]
                         prev_value = prev.get("obs_value")
                         prev_year = prev.get("time", "")
-                        if prev_value and value:
+                        # CR-0012: Use is not None to handle valid zero values
+                        if prev_value is not None and value is not None:
                             try:
                                 change = float(value) - float(prev_value)
                                 direction = (
@@ -254,6 +257,7 @@ def get_labor_indicators(country: str, indicators: str | None = None) -> str:
 
 
 @tool
+@timeout(30)
 def get_employment_by_gender(country: str, year: int | None = None) -> str:
     """
     Get gender-disaggregated employment statistics.
@@ -368,6 +372,7 @@ def get_employment_by_gender(country: str, year: int | None = None) -> str:
 
 
 @tool
+@timeout(30)
 def get_labor_time_series(
     country: str,
     indicator: str,
@@ -470,6 +475,7 @@ def get_labor_time_series(
 
 
 @tool
+@timeout(30)
 def search_labor_indicators(query: str) -> str:
     """
     Search available labor indicators by keyword.

@@ -7,10 +7,13 @@ No API key required for basic queries.
 API Documentation: https://techdocs.gbif.org/en/openapi/
 """
 
+import math
+
 from strands import tool
 
 from ._geo import geocode_or_parse, validate_coordinates
 from ._http import APIError, fetch_json, format_error
+from ._timeout import timeout
 
 # GBIF API base URLs
 GBIF_API = "https://api.gbif.org/v1"
@@ -99,11 +102,14 @@ def _search_occurrences(
     if lat is not None and lon is not None:
         # Validate coordinates before using
         validate_coordinates(lat, lon, context="for GBIF occurrence search")
-        # Convert radius_km to degrees: 1° latitude ≈ 111 km at Earth's surface
-        # Note: This is a simple approximation; longitude variation with latitude
-        # is not corrected here (acceptable for small search radii)
-        params["decimalLatitude"] = f"{lat - radius_km / 111},{lat + radius_km / 111}"
-        params["decimalLongitude"] = f"{lon - radius_km / 111},{lon + radius_km / 111}"
+        # Convert radius_km to degrees
+        # Latitude: 1° ≈ 111 km (constant)
+        lat_range = radius_km / 111
+        # Longitude: varies with latitude (cos factor)
+        cos_lat = math.cos(math.radians(abs(lat)))
+        lon_range = radius_km / (111 * max(cos_lat, 0.01))
+        params["decimalLatitude"] = f"{lat - lat_range},{lat + lat_range}"
+        params["decimalLongitude"] = f"{lon - lon_range},{lon + lon_range}"
     if year:
         params["year"] = year
 
@@ -130,6 +136,7 @@ def _get_occurrence_counts(
 
 
 @tool
+@timeout(30)
 def search_species(query: str, n_results: int = 10) -> str:
     """
     Search for species in the GBIF taxonomic backbone.
@@ -206,6 +213,7 @@ def search_species(query: str, n_results: int = 10) -> str:
 
 
 @tool
+@timeout(30)
 def get_species_occurrences(
     species: str,
     location: str | None = None,
@@ -348,6 +356,7 @@ def get_species_occurrences(
 
 
 @tool
+@timeout(30)
 def get_biodiversity_summary(
     location: str,
     radius_km: float = 50,
@@ -395,15 +404,12 @@ def get_biodiversity_summary(
         lat_range = radius_km / 111
 
         # Longitude: distance per degree varies with latitude (cos(lat) factor)
-        # At equator: 1° ≈ 111 km; at poles: 1° ≈ 0 km
-        # Formula approximation: 111 * abs(lat)/90 gives rough scaling factor
-        # Add 0.001 to avoid division by zero near equator
-        # At lat ≥ 89°, use flat approximation to avoid extreme values
-        lon_range = (
-            radius_km / (111 * abs(lat) / 90 + 0.001)
-            if abs(lat) < 89
-            else radius_km / 111
-        )
+        # At equator: 1° ≈ 111 km; at poles: 1° → 0 km
+        # Formula for lon degrees: km / (111 * cos(lat_radians))
+        lat_radians = math.radians(abs(lat))
+        cos_lat = math.cos(lat_radians)
+        # Clamp cos_lat to avoid division by near-zero at poles
+        lon_range = radius_km / (111 * max(cos_lat, 0.01))
 
         params: dict[str, str | int] = {
             "decimalLatitude": f"{lat - lat_range},{lat + lat_range}",
@@ -503,6 +509,7 @@ def get_biodiversity_summary(
 
 
 @tool
+@timeout(30)
 def get_species_taxonomy(species: str) -> str:
     """
     Get detailed taxonomic information for a species.

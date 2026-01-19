@@ -10,6 +10,8 @@ API Documentation: https://data-api.globalforestwatch.org/docs
 from __future__ import annotations
 
 import math
+import random
+import time
 from datetime import datetime
 from typing import Any, Final
 
@@ -21,6 +23,7 @@ from agentic_cba_indicators.logging_config import get_logger
 
 from ._http import APIError, create_client, format_error, sanitize_error
 from ._mappings import COUNTRY_CODES_ISO3, normalize_key
+from ._timeout import timeout
 
 # Module logger
 logger = get_logger(__name__)
@@ -37,6 +40,8 @@ VALID_WINDOW_YEARS: Final[tuple[int, ...]] = (5, 10)
 # Default retries for GFW API (their rate limits can be aggressive)
 GFW_RETRIES: Final[int] = 3
 GFW_TIMEOUT: Final[float] = 60.0  # GFW queries can be slow
+GFW_BACKOFF_BASE: Final[float] = 1.0  # Base delay for exponential backoff
+GFW_BACKOFF_MAX: Final[float] = 30.0  # Maximum backoff delay
 
 
 # =============================================================================
@@ -160,60 +165,126 @@ def _gfw_get(
     endpoint: str,
     params: dict[str, Any] | None = None,
     client: httpx.Client | None = None,
+    retries: int = GFW_RETRIES,
 ) -> dict[str, Any]:
-    """Make authenticated GET request to GFW API.
+    """Make authenticated GET request to GFW API with retry logic.
+
+    Implements exponential backoff with jitter for 429 and 5xx errors.
 
     Args:
         endpoint: API endpoint (e.g., "/v0/land/tree_cover_loss_by_driver")
         params: Query parameters
         client: Optional existing client
+        retries: Number of retry attempts (default: GFW_RETRIES)
 
     Returns:
         Parsed JSON response
 
     Raises:
-        APIError: On HTTP errors
+        APIError: On HTTP errors after exhausting retries
     """
     should_close = client is None
     headers = _get_gfw_headers()
     client = client or create_client(timeout=GFW_TIMEOUT, headers=headers)
 
     url = f"{GFW_BASE_URL}{endpoint}"
+    last_error: APIError | None = None
 
     try:
-        response = client.get(url, params=params)
+        for attempt in range(retries + 1):
+            try:
+                response = client.get(url, params=params)
 
-        if response.status_code == 200:
-            return response.json()
+                if response.status_code == 200:
+                    return response.json()
 
-        # Handle common error cases
-        if response.status_code == 401:
-            raise APIError(
-                "GFW API authentication failed. Check your GFW_API_KEY.",
-                status_code=401,
-            )
-        if response.status_code == 404:
-            raise APIError(
-                f"GFW resource not found: {endpoint}",
-                status_code=404,
-            )
-        if response.status_code == 429:
-            raise APIError(
-                "GFW API rate limit exceeded. Try again later.",
-                status_code=429,
-            )
+                # Handle common error cases
+                if response.status_code == 401:
+                    raise APIError(
+                        "GFW API authentication failed. Check your GFW_API_KEY.",
+                        status_code=401,
+                    )
+                if response.status_code == 404:
+                    raise APIError(
+                        f"GFW resource not found: {endpoint}",
+                        status_code=404,
+                    )
 
-        # Generic error
-        error_text = response.text[:200] if response.text else "No details"
-        raise APIError(
-            f"GFW API error: HTTP {response.status_code} - {sanitize_error(error_text)}",
-            status_code=response.status_code,
-        )
+                # Retryable errors: 429 (rate limit) and 5xx (server errors)
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < retries:
+                        # Check for Retry-After header on 429
+                        retry_after = response.headers.get("Retry-After")
+                        if retry_after:
+                            delay = min(float(retry_after), GFW_BACKOFF_MAX)
+                        else:
+                            base_delay = GFW_BACKOFF_BASE * (2**attempt)
+                            jitter = random.uniform(0, GFW_BACKOFF_BASE)
+                            delay = min(base_delay + jitter, GFW_BACKOFF_MAX)
+                        logger.debug(
+                            "GFW API error %d, retrying in %.1fs (attempt %d/%d)",
+                            response.status_code,
+                            delay,
+                            attempt + 1,
+                            retries,
+                        )
+                        time.sleep(delay)
+                        continue
 
-    except httpx.TimeoutException as e:
-        raise APIError("GFW API request timed out") from e
-    except httpx.RequestError as e:
-        raise APIError(f"GFW API request failed: {e!s}") from e
+                    # Exhausted retries
+                    if response.status_code == 429:
+                        raise APIError(
+                            f"GFW API rate limit exceeded after {retries} retries.",
+                            status_code=429,
+                        )
+                    raise APIError(
+                        f"GFW API server error ({response.status_code}) after {retries} retries.",
+                        status_code=response.status_code,
+                    )
+
+                # Generic non-retryable error
+                error_text = response.text[:200] if response.text else "No details"
+                raise APIError(
+                    f"GFW API error: HTTP {response.status_code} - {sanitize_error(error_text)}",
+                    status_code=response.status_code,
+                )
+
+            except httpx.TimeoutException as e:
+                last_error = APIError("GFW API request timed out")
+                if attempt < retries:
+                    delay = GFW_BACKOFF_BASE * (2**attempt)
+                    logger.debug(
+                        "GFW API timeout, retrying in %.1fs (attempt %d/%d)",
+                        delay,
+                        attempt + 1,
+                        retries,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise APIError(
+                    f"GFW API request timed out after {retries} retries"
+                ) from e
+            except httpx.RequestError as e:
+                last_error = APIError(f"GFW API request failed: {e!s}")
+                if attempt < retries:
+                    delay = GFW_BACKOFF_BASE * (2**attempt)
+                    logger.debug(
+                        "GFW API request error, retrying in %.1fs (attempt %d/%d)",
+                        delay,
+                        attempt + 1,
+                        retries,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise APIError(
+                    f"GFW API request failed after {retries} retries: {e!s}"
+                ) from e
+
+        # Should not reach here, but just in case
+        if last_error:
+            raise last_error
+        raise APIError("GFW API request failed unexpectedly")
+
     finally:
         if should_close:
             client.close()
@@ -223,61 +294,129 @@ def _gfw_post(
     endpoint: str,
     json_data: dict[str, Any],
     client: httpx.Client | None = None,
+    retries: int = GFW_RETRIES,
 ) -> dict[str, Any]:
-    """Make authenticated POST request to GFW API.
+    """Make authenticated POST request to GFW API with retry logic.
+
+    Implements exponential backoff with jitter for 429 and 5xx errors.
 
     Args:
         endpoint: API endpoint (e.g., "/geostore")
         json_data: JSON body to post
         client: Optional existing client
+        retries: Number of retry attempts (default: GFW_RETRIES)
 
     Returns:
         Parsed JSON response
 
     Raises:
-        APIError: On HTTP errors
+        APIError: On HTTP errors after exhausting retries
     """
     should_close = client is None
     headers = _get_gfw_headers()
     client = client or create_client(timeout=GFW_TIMEOUT, headers=headers)
 
     url = f"{GFW_BASE_URL}{endpoint}"
+    last_error: APIError | None = None
 
     try:
-        response = client.post(url, json=json_data)
+        for attempt in range(retries + 1):
+            try:
+                response = client.post(url, json=json_data)
 
-        if response.status_code in (200, 201):
-            return response.json()
+                if response.status_code in (200, 201):
+                    return response.json()
 
-        # Handle common error cases
-        if response.status_code == 401:
-            raise APIError(
-                "GFW API authentication failed. Check your GFW_API_KEY.",
-                status_code=401,
-            )
-        if response.status_code == 400:
-            error_text = response.text[:200] if response.text else "Invalid request"
-            raise APIError(
-                f"GFW API bad request: {sanitize_error(error_text)}",
-                status_code=400,
-            )
-        if response.status_code == 429:
-            raise APIError(
-                "GFW API rate limit exceeded. Try again later.",
-                status_code=429,
-            )
+                # Handle common error cases
+                if response.status_code == 401:
+                    raise APIError(
+                        "GFW API authentication failed. Check your GFW_API_KEY.",
+                        status_code=401,
+                    )
+                if response.status_code == 400:
+                    error_text = (
+                        response.text[:200] if response.text else "Invalid request"
+                    )
+                    raise APIError(
+                        f"GFW API bad request: {sanitize_error(error_text)}",
+                        status_code=400,
+                    )
 
-        # Generic error
-        error_text = response.text[:200] if response.text else "No details"
-        raise APIError(
-            f"GFW API error: HTTP {response.status_code} - {sanitize_error(error_text)}",
-            status_code=response.status_code,
-        )
+                # Retryable errors: 429 (rate limit) and 5xx (server errors)
+                if response.status_code == 429 or response.status_code >= 500:
+                    if attempt < retries:
+                        # Check for Retry-After header on 429
+                        retry_after = response.headers.get("Retry-After")
+                        if retry_after:
+                            delay = min(float(retry_after), GFW_BACKOFF_MAX)
+                        else:
+                            base_delay = GFW_BACKOFF_BASE * (2**attempt)
+                            jitter = random.uniform(0, GFW_BACKOFF_BASE)
+                            delay = min(base_delay + jitter, GFW_BACKOFF_MAX)
+                        logger.debug(
+                            "GFW API error %d, retrying in %.1fs (attempt %d/%d)",
+                            response.status_code,
+                            delay,
+                            attempt + 1,
+                            retries,
+                        )
+                        time.sleep(delay)
+                        continue
 
-    except httpx.TimeoutException as e:
-        raise APIError("GFW API request timed out") from e
-    except httpx.RequestError as e:
-        raise APIError(f"GFW API request failed: {e!s}") from e
+                    # Exhausted retries
+                    if response.status_code == 429:
+                        raise APIError(
+                            f"GFW API rate limit exceeded after {retries} retries.",
+                            status_code=429,
+                        )
+                    raise APIError(
+                        f"GFW API server error ({response.status_code}) after {retries} retries.",
+                        status_code=response.status_code,
+                    )
+
+                # Generic non-retryable error
+                error_text = response.text[:200] if response.text else "No details"
+                raise APIError(
+                    f"GFW API error: HTTP {response.status_code} - {sanitize_error(error_text)}",
+                    status_code=response.status_code,
+                )
+
+            except httpx.TimeoutException as e:
+                last_error = APIError("GFW API request timed out")
+                if attempt < retries:
+                    delay = GFW_BACKOFF_BASE * (2**attempt)
+                    logger.debug(
+                        "GFW API timeout, retrying in %.1fs (attempt %d/%d)",
+                        delay,
+                        attempt + 1,
+                        retries,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise APIError(
+                    f"GFW API request timed out after {retries} retries"
+                ) from e
+            except httpx.RequestError as e:
+                last_error = APIError(f"GFW API request failed: {e!s}")
+                if attempt < retries:
+                    delay = GFW_BACKOFF_BASE * (2**attempt)
+                    logger.debug(
+                        "GFW API request error, retrying in %.1fs (attempt %d/%d)",
+                        delay,
+                        attempt + 1,
+                        retries,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise APIError(
+                    f"GFW API request failed after {retries} retries: {e!s}"
+                ) from e
+
+        # Should not reach here, but just in case
+        if last_error:
+            raise last_error
+        raise APIError("GFW API request failed unexpectedly")
+
     finally:
         if should_close:
             client.close()
@@ -301,6 +440,7 @@ def _create_circular_geostore(lat: float, lon: float, radius_km: float) -> str:
         APIError: On HTTP errors
         ValueError: On invalid inputs
     """
+    # CR-0021: Validation raises ValueError on invalid input; return values unused
     _validate_coordinates(lat, lon)
     _validate_radius_km(radius_km)
 
@@ -354,6 +494,7 @@ def _create_circular_geostore(lat: float, lon: float, radius_km: float) -> str:
 
 
 @tool
+@timeout(60)
 def get_tree_cover_loss_trends(
     country: str,
     region: str | None = None,
@@ -484,6 +625,7 @@ def get_tree_cover_loss_trends(
 
 
 @tool
+@timeout(60)
 def get_tree_cover_loss_by_driver(
     country: str,
     region: str | None = None,
@@ -598,6 +740,7 @@ def get_tree_cover_loss_by_driver(
 
 
 @tool
+@timeout(60)
 def get_forest_carbon_stock(
     lat: float,
     lon: float,
@@ -688,6 +831,7 @@ def get_forest_carbon_stock(
 
 
 @tool
+@timeout(60)
 def get_forest_extent(
     lat: float,
     lon: float,

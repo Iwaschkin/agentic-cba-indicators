@@ -17,6 +17,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
+from enum import Enum
 from functools import wraps
 from typing import Any, TypeVar
 
@@ -93,6 +94,39 @@ class APIError(Exception):
     def __init__(self, message: str, status_code: int | None = None):
         super().__init__(message)
         self.status_code = status_code
+
+
+class ErrorCategory(str, Enum):
+    """High-level error categories for tool failures."""
+
+    TRANSIENT = "transient"
+    PERMANENT = "permanent"
+    RATE_LIMIT = "rate_limit"
+    VALIDATION = "validation"
+    UNKNOWN = "unknown"
+
+
+def classify_error(error: Exception) -> ErrorCategory:
+    """Classify errors into coarse categories for diagnostics and retries."""
+    if isinstance(error, APIError):
+        status = error.status_code
+        if status == 429:
+            return ErrorCategory.RATE_LIMIT
+        if status in {408, 425}:
+            return ErrorCategory.TRANSIENT
+        if status is not None and 500 <= status <= 599:
+            return ErrorCategory.TRANSIENT
+        if status is not None and 400 <= status <= 499:
+            return ErrorCategory.PERMANENT
+        return ErrorCategory.UNKNOWN
+
+    if isinstance(error, httpx.TimeoutException):
+        return ErrorCategory.TRANSIENT
+
+    if isinstance(error, ValueError):
+        return ErrorCategory.VALIDATION
+
+    return ErrorCategory.UNKNOWN
 
 
 def create_client(
@@ -268,7 +302,12 @@ def format_error(error: Exception, context: str = "") -> str:
     Returns:
         Formatted and sanitized error message string
     """
-    prefix = f"Error {context}: " if context else "Error: "
+    category = classify_error(error).value
+    prefix = (
+        f"Error {context} (category: {category}): "
+        if context
+        else f"Error (category: {category}): "
+    )
 
     if isinstance(error, APIError):
         if error.status_code:

@@ -6,6 +6,7 @@ import pytest
 
 from agentic_cba_indicators.tools import REDUCED_TOOLS
 from agentic_cba_indicators.tools._help import (
+    _TOOL_CATEGORIES,
     _get_tools_from_context,
     describe_tool,
     list_tools,
@@ -39,6 +40,15 @@ def context_with_tools() -> MagicMock:
     return mock
 
 
+@pytest.fixture
+def context_with_tool_registry() -> MagicMock:
+    """Create a mock ToolContext with tools in agent.tool_registry."""
+    mock = MagicMock()
+    mock.agent.tool_registry = {t.__name__: t for t in REDUCED_TOOLS}
+    mock.agent.tools = None
+    return mock
+
+
 class TestGetToolsFromContext:
     """Tests for _get_tools_from_context() helper function."""
 
@@ -62,6 +72,14 @@ class TestGetToolsFromContext:
         """Verify returns agent.tools when available."""
         set_active_tools([])  # Empty module registry
         tools = _get_tools_from_context(context_with_tools)
+        assert len(tools) == len(REDUCED_TOOLS)
+
+    def test_returns_tool_registry_when_available(
+        self, context_with_tool_registry: MagicMock
+    ) -> None:
+        """Verify returns agent.tool_registry values when available."""
+        set_active_tools([])
+        tools = _get_tools_from_context(context_with_tool_registry)
         assert len(tools) == len(REDUCED_TOOLS)
 
 
@@ -164,6 +182,19 @@ class TestListToolsByCategory:
         result = list_tools_by_category(tool_context=mock_tool_context)
 
         assert result == "No tools available."
+
+
+class TestToolCategoryKeywords:
+    """Tests for tool category keyword uniqueness."""
+
+    def test_category_keywords_unique(self) -> None:
+        seen: dict[str, str] = {}
+        for cat_id, (_, keywords) in _TOOL_CATEGORIES.items():
+            for keyword in keywords:
+                assert keyword not in seen, (
+                    f"Keyword '{keyword}' duplicated in {seen[keyword]} and {cat_id}"
+                )
+                seen[keyword] = cat_id
 
 
 class TestSearchTools:

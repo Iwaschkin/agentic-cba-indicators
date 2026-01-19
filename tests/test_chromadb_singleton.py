@@ -91,6 +91,77 @@ class TestChromaDBSingleton:
             # Verify PersistentClient only called once
             assert mock_chromadb.PersistentClient.call_count == 1
 
+    def test_concurrent_access_stress(self) -> None:
+        """Stress test for concurrent singleton access with simulated contention.
+
+        CR-0026: Tests race conditions under high concurrency with artificial
+        delays to increase the chance of detecting race conditions.
+        """
+        import time
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        from agentic_cba_indicators.tools.knowledge_base import _get_chroma_client
+
+        results: list[object] = []
+        errors: list[Exception] = []
+        call_count = 0
+        call_lock = threading.Lock()
+
+        with patch(
+            "agentic_cba_indicators.tools.knowledge_base.chromadb"
+        ) as mock_chromadb:
+            mock_client = MagicMock()
+
+            def slow_client_creation(*args: object, **kwargs: object) -> MagicMock:
+                """Simulate slow client creation to increase race window."""
+                nonlocal call_count
+                with call_lock:
+                    call_count += 1
+                # Small delay to increase chance of race conditions
+                time.sleep(0.01)
+                return mock_client
+
+            mock_chromadb.PersistentClient.side_effect = slow_client_creation
+
+            def get_client_with_work() -> object:
+                """Get client and do some 'work' to simulate real usage."""
+                try:
+                    client = _get_chroma_client()
+                    # Simulate some work with the client
+                    time.sleep(0.001)
+                    return client
+                except Exception as e:
+                    errors.append(e)
+                    return None
+
+            # Use ThreadPoolExecutor for more realistic concurrent access
+            num_workers = 50
+            num_calls = 100
+
+            with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = [
+                    executor.submit(get_client_with_work) for _ in range(num_calls)
+                ]
+
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result is not None:
+                        results.append(result)
+
+            # Verify no errors occurred
+            assert not errors, f"Errors during concurrent access: {errors}"
+
+            # Verify all calls got the same instance
+            assert len(results) == num_calls
+            assert all(r is mock_client for r in results)
+
+            # Verify PersistentClient was only called once despite concurrent access
+            # This is the key assertion - singleton should only initialize once
+            assert call_count == 1, (
+                f"PersistentClient called {call_count} times, expected 1. "
+                "Race condition in singleton initialization detected!"
+            )
+
     def test_reset_allows_new_client(self) -> None:
         """Verify reset_chroma_client allows creating a new client."""
         from agentic_cba_indicators.tools.knowledge_base import (

@@ -5,10 +5,27 @@
 *No tasks currently in progress*
 
 ## Pending
-
-*No pending tasks - All phases complete*
+*No pending tasks*
 
 ## Completed
+
+### Code Review v2 Action Plan - Phase 3 (Medium Priority)
+- [TASK127] Standardize tool context usage - P3 - ATI-004 ✅
+- [TASK128] Add knowledge base query caching - P3 - KBI-001 ✅
+- [TASK129] Add tool error classification - P3 - Action Plan ✅
+- [TASK130] Add request correlation IDs - P3 - Action Plan ✅
+
+### Code Review v4 Remediation - Phase 1-6 (COMPLETE)
+- [TASK117] Add debug logging to tool context discovery - P2 - ATI-001 ✅
+- [TASK118] Create CONTRIBUTING.md with tool docs - P3 - DCG-001 ✅
+- [TASK119] Add __version__ constant to package - P3 - DCG-002 ✅
+- [TASK120] Make geocoding cache thread-safe - P1 - PNR-001 ✅
+- [TASK121] Evaluate tiktoken for accurate token estimation - P1 - MSM-001 ✅
+- [TASK122] Account for system prompt in token budget - P2 - MSM-002 ✅
+- [TASK123] Add tool execution timeout decorator - P1 - PNR-003 ✅
+- [TASK124] Review tool categories for keyword overlap - P2 - ATI-002 ✅
+- [TASK125] Audit tool context discovery logic - P3 - ATI-003 ✅
+- [TASK126] Update known-limitations document - P3 - Closure ✅
 
 ### Code Review v3 Remediation - Phase 6 (Documentation & Deferrals) - COMPLETE
 - [TASK115] Architecture decision records - P1 - P1-004, P1-006, P2-* ✅

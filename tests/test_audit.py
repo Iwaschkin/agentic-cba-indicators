@@ -20,6 +20,7 @@ from agentic_cba_indicators.audit import (
     sanitize_value,
     truncate_result,
 )
+from agentic_cba_indicators.logging_config import set_correlation_id
 
 
 class TestSanitizeValue:
@@ -361,17 +362,20 @@ class TestGlobalAuditLogger:
                 os.environ[AUDIT_LOG_ENV_VAR] = str(log_path)
                 reset_audit_logger()
 
+                set_correlation_id("corr-abc")
                 log_tool_invocation(
                     tool_name="search_indicators",
                     params={"query": "test"},
                     success=True,
                 )
+                set_correlation_id(None)
 
                 # Verify file was created and has content
                 assert log_path.exists()
                 with log_path.open() as f:
                     content = f.read()
                 assert "search_indicators" in content
+                assert "corr-abc" in content
             finally:
                 if old_value:
                     os.environ[AUDIT_LOG_ENV_VAR] = old_value

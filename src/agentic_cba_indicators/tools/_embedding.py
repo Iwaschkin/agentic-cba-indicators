@@ -11,6 +11,7 @@ Supports both local Ollama and Ollama Cloud with TLS validation.
 from __future__ import annotations
 
 import os
+import threading
 import time
 import warnings
 from urllib.parse import urlparse
@@ -55,6 +56,7 @@ def get_expected_dimensions() -> int:
 # Default: max 10 calls/second (0.1s between calls)
 _MIN_EMBEDDING_INTERVAL = float(os.environ.get("OLLAMA_MIN_INTERVAL", "0.1"))
 _last_embedding_time: float = 0.0
+_rate_limit_lock = threading.Lock()  # Thread-safe rate limiting (CR-0015)
 
 # Retry settings for embedding calls
 _EMBEDDING_RETRIES = int(os.environ.get("OLLAMA_EMBEDDING_RETRIES", "3"))
@@ -122,6 +124,9 @@ def get_embedding(text: str) -> list[float]:
     Includes rate limiting to prevent flooding the embedding service.
     Rate limit is configurable via OLLAMA_MIN_INTERVAL env var (default: 0.1s).
 
+    Thread Safety:
+        Rate limiting is thread-safe via _rate_limit_lock.
+
     Args:
         text: Text to generate embedding for
 
@@ -133,11 +138,13 @@ def get_embedding(text: str) -> list[float]:
     """
     global _last_embedding_time
 
-    # Rate limiting: ensure minimum interval between calls
-    now = time.monotonic()
-    elapsed = now - _last_embedding_time
-    if elapsed < _MIN_EMBEDDING_INTERVAL:
-        time.sleep(_MIN_EMBEDDING_INTERVAL - elapsed)
+    # Thread-safe rate limiting (CR-0015 fix)
+    with _rate_limit_lock:
+        now = time.monotonic()
+        elapsed = now - _last_embedding_time
+        if elapsed < _MIN_EMBEDDING_INTERVAL:
+            time.sleep(_MIN_EMBEDDING_INTERVAL - elapsed)
+        _last_embedding_time = time.monotonic()
 
     last_error: Exception | None = None
 
@@ -150,7 +157,6 @@ def get_embedding(text: str) -> list[float]:
                     headers=_get_ollama_headers(),
                 )
                 response.raise_for_status()
-                _last_embedding_time = time.monotonic()
 
                 # Parse and validate response
                 data = response.json()

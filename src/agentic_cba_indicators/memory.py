@@ -181,6 +181,7 @@ class TokenBudgetConversationManager(ConversationManager):
         *,
         per_turn: bool | int = False,
         should_truncate_results: bool = True,
+        system_prompt_budget: int = 0,
     ) -> None:
         """Initialize the token budget conversation manager.
 
@@ -196,6 +197,10 @@ class TokenBudgetConversationManager(ConversationManager):
                 - int (e.g., 3): Apply before every N model calls
             should_truncate_results: Whether to truncate large tool results
                 when context overflow occurs. Defaults to True.
+            system_prompt_budget: Reserved token budget for system prompt and tool
+                definitions. This is subtracted from max_tokens to calculate the
+                effective conversation budget. Defaults to 0 (no reservation).
+                Recommended: 1000-2000 for typical system prompts with tools.
 
         Raises:
             ValueError: If max_tokens <= 0 or per_turn is 0 or negative.
@@ -210,11 +215,28 @@ class TokenBudgetConversationManager(ConversationManager):
                 f"per_turn must be positive integer or False, got {per_turn}"
             )
 
+        if system_prompt_budget < 0:
+            raise ValueError(
+                f"system_prompt_budget must be non-negative, got {system_prompt_budget}"
+            )
+
+        if system_prompt_budget >= max_tokens:
+            raise ValueError(
+                f"system_prompt_budget ({system_prompt_budget}) must be less than "
+                f"max_tokens ({max_tokens})"
+            )
+
         self.max_tokens = max_tokens
+        self.system_prompt_budget = system_prompt_budget
         self.token_estimator = token_estimator or estimate_tokens_heuristic
         self.per_turn = per_turn
         self.should_truncate_results = should_truncate_results
         self._model_call_count = 0
+
+    @property
+    def effective_budget(self) -> int:
+        """Return the effective token budget for conversation after system prompt reservation."""
+        return self.max_tokens - self.system_prompt_budget
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         """Register hooks for per-turn conversation management.
@@ -260,6 +282,7 @@ class TokenBudgetConversationManager(ConversationManager):
         state = super().get_state()
         state["model_call_count"] = self._model_call_count
         state["max_tokens"] = self.max_tokens
+        state["system_prompt_budget"] = self.system_prompt_budget
         state["__name__"] = self.__class__.__name__
         return state
 
@@ -283,6 +306,9 @@ class TokenBudgetConversationManager(ConversationManager):
         Estimates current token usage and trims oldest messages if over budget.
         Preserves tool use/result pairs to maintain conversation coherence.
 
+        Uses effective_budget (max_tokens - system_prompt_budget) to ensure
+        room for system prompt and tool definitions.
+
         Args:
             agent: The agent whose messages will be managed.
             **kwargs: Additional keyword arguments for future extensibility.
@@ -293,19 +319,22 @@ class TokenBudgetConversationManager(ConversationManager):
             return
 
         current_tokens = self._estimate_total_tokens(messages)
+        budget = self.effective_budget
 
-        if current_tokens <= self.max_tokens:
+        if current_tokens <= budget:
             logger.debug(
-                "current_tokens=<%d>, max_tokens=<%d> | within budget, no trimming needed",
+                "current_tokens=<%d>, effective_budget=<%d> (max=%d, system=%d) | within budget, no trimming needed",
                 current_tokens,
+                budget,
                 self.max_tokens,
+                self.system_prompt_budget,
             )
             return
 
         logger.debug(
-            "current_tokens=<%d>, max_tokens=<%d> | over budget, trimming messages",
+            "current_tokens=<%d>, effective_budget=<%d> | over budget, trimming messages",
             current_tokens,
-            self.max_tokens,
+            budget,
         )
 
         self._trim_to_budget(messages)
@@ -341,7 +370,7 @@ class TokenBudgetConversationManager(ConversationManager):
             ) from e
 
         # Reduce budget temporarily for aggressive trimming
-        reduced_budget = int(self.max_tokens * 0.7)  # 30% reduction
+        reduced_budget = int(self.effective_budget * 0.7)  # 30% reduction
         self._trim_to_budget(messages, target_tokens=reduced_budget)
 
         if len(messages) <= MIN_MESSAGES_TO_PRESERVE:
@@ -378,9 +407,9 @@ class TokenBudgetConversationManager(ConversationManager):
 
         Args:
             messages: Messages to trim (modified in-place).
-            target_tokens: Target token budget (defaults to self.max_tokens).
+            target_tokens: Target token budget (defaults to effective_budget).
         """
-        target = target_tokens or self.max_tokens
+        target = target_tokens or self.effective_budget
 
         if len(messages) <= MIN_MESSAGES_TO_PRESERVE:
             return
@@ -493,7 +522,10 @@ class TokenBudgetConversationManager(ConversationManager):
             True if any truncation was performed.
         """
         truncated = False
-        truncation_message = "Tool result truncated to reduce context size."
+        # Preserve 800 chars of content + truncation notice (CR-0004 fix)
+        max_content_length = 1000
+        preserved_length = 800
+        truncation_suffix = "\n\n... [truncated to reduce context size]"
 
         for msg in messages:
             content = msg.get("content", [])
@@ -507,8 +539,11 @@ class TokenBudgetConversationManager(ConversationManager):
                         for rc in result_content:
                             if isinstance(rc, dict) and "text" in rc:
                                 text = str(rc["text"])
-                                if len(text) > 1000:  # Truncate large results
-                                    rc["text"] = truncation_message
+                                if len(text) > max_content_length:
+                                    # Preserve meaningful prefix instead of destroying content
+                                    rc["text"] = (
+                                        text[:preserved_length] + truncation_suffix
+                                    )
                                     truncated = True
 
         return truncated

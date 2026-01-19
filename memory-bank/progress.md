@@ -111,6 +111,34 @@
 - **Known Limitations documentation** (NEW)
   - docs/known-limitations.md with 23 documented P3 items
   - Organized by category with impact and mitigation
+- **KB query caching** (NEW)
+  - TTLCache for search tools with thread-safe lock
+  - Configurable via KB_QUERY_CACHE_TTL / KB_QUERY_CACHE_MAXSIZE
+- **Error classification** (NEW)
+  - ErrorCategory enum and classify_error() in _http.py
+  - format_error() includes category for diagnostics
+- **Correlation IDs** (NEW)
+  - Per-request UUID4 correlation_id in CLI
+  - Logging filter injects correlation_id
+  - Audit logging uses correlation_id as session_id when available
+
+## Completed (Code Review v4 Remediation)
+- TASK117 debug logging in `tools/_help.py` ✅
+- TASK118 CONTRIBUTING.md created + README reference ✅
+- TASK119 __version__ already present ✅
+- TASK120 thread-safe geocode cache (TTLCache + lock) ✅
+- TASK121 tiktoken evaluation documented ✅
+- TASK122 system prompt budget wired + tests ✅
+- TASK123 tool timeout decorator applied + tests ✅
+- TASK124 keyword overlap guard test ✅
+- TASK125 tool context audit ✅
+- TASK126 known-limitations update ✅
+
+## Completed (Code Review v2 Action Plan)
+- TASK127 Standardize tool context usage ✅
+- TASK128 Add knowledge base query caching ✅
+- TASK129 Add tool error classification ✅
+- TASK130 Add request correlation IDs ✅
 
 ## Completed
 

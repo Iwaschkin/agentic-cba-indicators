@@ -4,9 +4,11 @@ from strands import tool
 
 from ._geo import geocode_city
 from ._http import APIError, fetch_json, format_error
+from ._timeout import timeout
 
 
 @tool
+@timeout(30)
 def get_climate_data(city: str) -> str:
     """
     Get climate normals (30-year averages) for a city.
@@ -106,6 +108,7 @@ def get_climate_data(city: str) -> str:
 
 
 @tool
+@timeout(30)
 def get_historical_climate(city: str, year: int) -> str:
     """
     Get historical weather data for a specific year and city.

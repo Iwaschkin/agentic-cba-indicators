@@ -14,6 +14,7 @@ from strands import tool
 
 from ._http import APIError, fetch_json, format_error
 from ._mappings import COUNTRY_CODES_FAO, normalize_key
+from ._timeout import timeout
 
 # FAO FAOSTAT API endpoints
 FAOSTAT_API = "https://fenixservices.fao.org/faostat/api/v1"
@@ -121,6 +122,7 @@ def _fetch_faostat_data(
 
 
 @tool
+@timeout(30)
 def get_forest_statistics(country: str) -> str:
     """
     Get forest statistics for a country from FAO.
@@ -176,6 +178,7 @@ def get_forest_statistics(country: str) -> str:
 
 
 @tool
+@timeout(30)
 def get_crop_production(country: str, crop: str) -> str:
     """
     Get agricultural production statistics for a crop in a country.
@@ -227,6 +230,7 @@ def get_crop_production(country: str, crop: str) -> str:
 
 
 @tool
+@timeout(30)
 def get_land_use(country: str) -> str:
     """
     Get land use statistics for a country from FAO.
@@ -279,6 +283,7 @@ def get_land_use(country: str) -> str:
 
 
 @tool
+@timeout(30)
 def search_fao_indicators(query: str) -> str:
     """
     Search available FAO data indicators.

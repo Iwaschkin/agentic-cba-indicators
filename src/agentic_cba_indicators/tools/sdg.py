@@ -11,6 +11,7 @@ from strands import tool
 
 from ._http import APIError, fetch_json, format_error
 from ._mappings import COUNTRY_CODES_SDG, normalize_key
+from ._timeout import timeout
 
 # UN SDG API base URL
 SDG_BASE = "https://unstats.un.org/sdgs/UNSDGAPIV5/v1/sdg"
@@ -104,6 +105,7 @@ def _fetch_series_data(
 
 
 @tool
+@timeout(30)
 def get_sdg_progress(country: str, goal: int | None = None) -> str:
     """
     Get SDG indicator progress for a country.
@@ -197,6 +199,7 @@ def get_sdg_progress(country: str, goal: int | None = None) -> str:
 
 
 @tool
+@timeout(30)
 def search_sdg_indicators(query: str, goal: int | None = None) -> str:
     """
     Search for SDG indicators by keyword.
@@ -288,6 +291,7 @@ def search_sdg_indicators(query: str, goal: int | None = None) -> str:
 
 
 @tool
+@timeout(30)
 def get_sdg_series_data(series_code: str, country: str, years: int = 10) -> str:
     """
     Get time series data for a specific SDG indicator.
@@ -398,6 +402,7 @@ def get_sdg_series_data(series_code: str, country: str, years: int = 10) -> str:
 
 
 @tool
+@timeout(30)
 def get_sdg_for_cba_principle(principle: str) -> str:
     """
     Get SDG goals and indicators aligned with a CBA principle.

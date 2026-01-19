@@ -12,6 +12,7 @@ Thread Safety:
 
 from __future__ import annotations
 
+import atexit
 import os
 import re
 import threading
@@ -19,6 +20,7 @@ import time
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import chromadb
+from cachetools import TTLCache
 from strands import tool
 
 from agentic_cba_indicators.logging_config import get_logger
@@ -55,6 +57,15 @@ class ChromaDBError(Exception):
 # Thread-safe singleton for ChromaDB client
 _chroma_client: ClientAPI | None = None
 _chroma_client_lock = threading.Lock()
+
+# Thread-safe cache for KB query results
+# CR-0018: Type annotation restricts keys to hashable primitives only
+_KB_CACHE_TTL = int(os.environ.get("KB_QUERY_CACHE_TTL", "300"))  # 5 minutes
+_KB_CACHE_MAXSIZE = int(os.environ.get("KB_QUERY_CACHE_MAXSIZE", "512"))
+_kb_query_cache: TTLCache[tuple[str | int | float | bool | None, ...], str] = TTLCache(
+    maxsize=_KB_CACHE_MAXSIZE, ttl=_KB_CACHE_TTL
+)
+_kb_cache_lock = threading.Lock()
 
 # Retry settings for ChromaDB operations
 _CHROMADB_RETRIES = int(os.environ.get("CHROMADB_RETRIES", "3"))
@@ -182,6 +193,48 @@ def reset_chroma_client() -> None:
         logger.debug("ChromaDB client singleton reset")
 
 
+def shutdown_chroma_client() -> None:
+    """Gracefully shutdown the ChromaDB client singleton.
+
+    Ensures database is properly closed and WAL is flushed.
+    Registered as atexit handler for automatic cleanup on process exit.
+    Thread-safe.
+    """
+    global _chroma_client
+    with _chroma_client_lock:
+        if _chroma_client is not None:
+            try:
+                # ChromaDB PersistentClient uses SQLite which should auto-commit,
+                # but explicitly clearing reference allows GC to close handles
+                logger.debug("Shutting down ChromaDB client singleton")
+                _chroma_client = None
+            except Exception as e:
+                logger.warning("Error during ChromaDB shutdown: %s", e)
+
+
+# Register cleanup on process exit
+atexit.register(shutdown_chroma_client)
+
+
+def reset_kb_query_cache() -> None:
+    """Reset the KB query cache (testing only)."""
+    with _kb_cache_lock:
+        _kb_query_cache.clear()
+        logger.debug("KB query cache cleared")
+
+
+def _get_cached_kb_result(key: tuple[Any, ...]) -> str | None:
+    """Get cached KB query result if available."""
+    with _kb_cache_lock:
+        return _kb_query_cache.get(key)
+
+
+def _set_cached_kb_result(key: tuple[Any, ...], value: str) -> None:
+    """Store KB query result in cache."""
+    with _kb_cache_lock:
+        _kb_query_cache[key] = value
+
+
 def _get_collection(name: str) -> chromadb.Collection:
     """Get a ChromaDB collection with retry logic.
 
@@ -260,6 +313,10 @@ def search_indicators(
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
     min_similarity = max(0.0, min(1.0, min_similarity))
 
+    cache_key = ("search_indicators", query, n_results, min_similarity)
+    if cached := _get_cached_kb_result(cache_key):
+        return cached
+
     try:
         collection = _get_collection("indicators")
 
@@ -333,7 +390,9 @@ def search_indicators(
             return "No matching indicators found above similarity threshold."
 
         header = f"Found {result_count} matching indicators:\n"
-        return header + "\n".join(output_lines)
+        result = header + "\n".join(output_lines)
+        _set_cached_kb_result(cache_key, result)
+        return result
 
     except (ChromaDBError, EmbeddingError) as e:
         logger.warning("KB search failed: %s", e, exc_info=True)
@@ -363,6 +422,10 @@ def search_methods(
     """
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
     min_similarity = max(0.0, min(1.0, min_similarity))
+
+    cache_key = ("search_methods", query, n_results, min_similarity, oa_only)
+    if cached := _get_cached_kb_result(cache_key):
+        return cached
 
     try:
         collection = _get_collection("methods")
@@ -430,7 +493,9 @@ def search_methods(
             return "No matching methods found above similarity threshold."
 
         header = f"Found {result_count} matching method groups:\n"
-        return header + "\n".join(output_lines)
+        result = header + "\n".join(output_lines)
+        _set_cached_kb_result(cache_key, result)
+        return result
 
     except (ChromaDBError, EmbeddingError) as e:
         logger.warning("Method search failed: %s", e, exc_info=True)
@@ -678,6 +743,10 @@ def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3)
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
     min_similarity = max(0.0, min(1.0, min_similarity))
 
+    cache_key = ("search_usecases", query, n_results, min_similarity)
+    if cached := _get_cached_kb_result(cache_key):
+        return cached
+
     try:
         collection = _get_collection("usecases")
 
@@ -744,7 +813,9 @@ def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3)
             return "No matching use cases found above similarity threshold."
 
         header = f"Found {result_count} matching use case documents:\n"
-        return header + "\n".join(output_lines)
+        result = header + "\n".join(output_lines)
+        _set_cached_kb_result(cache_key, result)
+        return result
 
     except (ChromaDBError, EmbeddingError) as e:
         logger.warning("Use case search failed: %s", e, exc_info=True)

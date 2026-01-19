@@ -22,8 +22,13 @@ from typing import TYPE_CHECKING
 
 from strands import ToolContext, tool
 
+from agentic_cba_indicators.logging_config import get_logger
+
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
+
+# Module logger for debugging tool discovery
+logger = get_logger(__name__)
 
 # Module-level registry for currently active tools
 # Set by CLI at startup via set_active_tools()
@@ -60,14 +65,15 @@ _TOOL_CATEGORIES: dict[str, tuple[str, list[str]]] = {
             "search_method",
             "usecase",
             "principle",
-            "class",
-            "component",
+            "find_indicators_by_class",  # CR-0017: Use full prefix to avoid false matches
+            "list_indicators_by_component",  # CR-0017: Use full prefix
+            "list_available_classes",  # CR-0017: Use full prefix
             "knowledge_base",
+            "knowledge_version",  # Added for get_knowledge_version
             "get_indicator",
             "find_indicator",
             "find_feasible",
             "list_indicator",
-            "list_available",
             "compare_indicator",
             "export_indicator",
         ],
@@ -76,7 +82,7 @@ _TOOL_CATEGORIES: dict[str, tuple[str, list[str]]] = {
 }
 
 
-def set_active_tools(tools: list[Callable[..., str]]) -> None:
+def set_active_tools(tools: Sequence[Callable[..., str]]) -> None:
     """
     Set the active tools registry for the help system.
 
@@ -85,7 +91,7 @@ def set_active_tools(tools: list[Callable[..., str]]) -> None:
     tool set (reduced or full).
 
     Args:
-        tools: List of tool functions to register
+        tools: Sequence of tool functions to register (list or tuple)
     """
     global _active_tools
     _active_tools = list(tools)
@@ -121,6 +127,13 @@ def _get_tools_from_context(
 ) -> list[Callable[..., str]]:
     """Get tools from ToolContext agent or fall back to module registry.
 
+    This inspects the ToolContext-provided agent for either `tool_registry`
+    (preferred) or `tools`. If neither is available, it falls back to the
+    module-level registry set via `set_active_tools()`.
+
+    Note: This relies on Strands agent internals, which may change. If a stable
+    public API becomes available, prefer that over introspection.
+
     Args:
         tool_context: Optional ToolContext provided by Strands runtime
 
@@ -136,9 +149,13 @@ def _get_tools_from_context(
                 return list(agent.tool_registry.values())
             if hasattr(agent, "tools") and agent.tools:
                 return list(agent.tools)
-        except (AttributeError, TypeError):
+        except (AttributeError, TypeError) as e:
             # Fall back to module registry if context access fails
-            pass
+            logger.debug(
+                "Tool context access failed, falling back to module registry: %s: %s",
+                type(e).__name__,
+                e,
+            )
 
     # Fall back to module-level registry
     return _active_tools

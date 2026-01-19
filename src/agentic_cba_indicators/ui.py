@@ -27,14 +27,34 @@ from agentic_cba_indicators.config import (
     get_provider_config,
     load_config,
 )
-from agentic_cba_indicators.memory import TokenBudgetConversationManager
+from agentic_cba_indicators.memory import (
+    TokenBudgetConversationManager,
+    estimate_tokens_heuristic,
+)
 from agentic_cba_indicators.prompts import get_system_prompt
 from agentic_cba_indicators.security import sanitize_pdf_context, sanitize_user_input
 from agentic_cba_indicators.tools import FULL_TOOLS, REDUCED_TOOLS
 from agentic_cba_indicators.tools._help import set_active_tools
 
 if TYPE_CHECKING:
-    from collections.abc import Generator
+    from collections.abc import Callable, Generator, Sequence
+
+
+def _estimate_system_prompt_budget(
+    system_prompt: str, tools: Sequence[Callable[..., str]]
+) -> int:
+    """Estimate token budget needed for system prompt and tool definitions.
+
+    This uses the heuristic estimator to keep provider-agnostic behavior.
+    Tool definitions are approximated using tool names and docstrings.
+    """
+    parts = [system_prompt]
+    for tool in tools:
+        name = getattr(tool, "__name__", str(tool))
+        doc = getattr(tool, "__doc__", "") or ""
+        parts.append(f"{name}\n{doc}")
+
+    return estimate_tokens_heuristic("\n\n".join(parts))
 
 
 def _is_streamlit_runtime() -> bool:
@@ -104,10 +124,17 @@ def create_agent_for_ui(
 
     model = create_model(provider_config)
 
+    tools = FULL_TOOLS if tool_set == "full" else REDUCED_TOOLS
+    system_prompt = get_system_prompt()
+
+    # CR-0009: Calculate system_prompt_budget to match CLI behavior
+    system_prompt_budget = _estimate_system_prompt_budget(system_prompt, list(tools))
+
     # Use token-budget manager if context_budget is set, otherwise fall back to sliding window
     if agent_config.context_budget is not None:
         conversation_manager = TokenBudgetConversationManager(
             max_tokens=agent_config.context_budget,
+            system_prompt_budget=system_prompt_budget,
         )
     else:
         # Legacy mode: use fixed message count
@@ -115,14 +142,15 @@ def create_agent_for_ui(
             window_size=agent_config.conversation_window,
         )
 
-    tools = FULL_TOOLS if tool_set == "full" else REDUCED_TOOLS
-    set_active_tools(tools)
+    set_active_tools(list(tools))
 
+    # Create agent with selected tools
+    # Convert tuple to list since Agent expects list type
     agent = Agent(
         model=model,
-        system_prompt=get_system_prompt(),
+        system_prompt=system_prompt,
         conversation_manager=conversation_manager,
-        tools=tools,
+        tools=list(tools),
     )
 
     return agent, provider_config, agent_config

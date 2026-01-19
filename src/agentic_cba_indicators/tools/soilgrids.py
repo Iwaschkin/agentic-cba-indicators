@@ -65,7 +65,24 @@ TEXTURE_CLASSES = [
 
 
 def _classify_texture(sand: float, silt: float, clay: float) -> str:
-    """Classify soil texture using USDA texture triangle."""
+    """Classify soil texture using USDA texture triangle.
+
+    Args:
+        sand: Sand percentage (0-100)
+        silt: Silt percentage (0-100)
+        clay: Clay percentage (0-100)
+
+    Returns:
+        USDA texture class name, or "Unknown" if values are invalid.
+    """
+    # CR-0025: Validate input before classification
+    # All values should be 0-100 and sum to approximately 100%
+    total = sand + silt + clay
+    if total < 1.0 or any(v < 0 for v in (sand, silt, clay)):
+        return "Unknown"
+    if not (95 <= total <= 105):  # Allow 5% tolerance for measurement error
+        return "Unknown"
+
     for name, condition in TEXTURE_CLASSES:
         if condition(sand, silt, clay):
             return name

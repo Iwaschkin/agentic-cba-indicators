@@ -81,6 +81,7 @@ class TestFormatError:
 
         assert "404" in result
         assert "fetching data" in result
+        assert "category" in result
 
     def test_sanitizes_api_error_message(self):
         """Should sanitize sensitive data in APIError messages."""
@@ -91,6 +92,7 @@ class TestFormatError:
 
         assert "secret123" not in result
         assert "[REDACTED]" in result
+        assert "category" in result
 
     def test_formats_generic_exception(self):
         """Should format generic exceptions."""
@@ -101,6 +103,41 @@ class TestFormatError:
 
         assert "Invalid input" in result
         assert "processing" in result
+        assert "category" in result
+
+
+class TestErrorClassification:
+    """Tests for error classification helper."""
+
+    def test_classifies_rate_limit(self):
+        from agentic_cba_indicators.tools._http import (
+            APIError,
+            ErrorCategory,
+            classify_error,
+        )
+
+        err = APIError("rate limit", status_code=429)
+        assert classify_error(err) == ErrorCategory.RATE_LIMIT
+
+    def test_classifies_transient(self):
+        from agentic_cba_indicators.tools._http import (
+            APIError,
+            ErrorCategory,
+            classify_error,
+        )
+
+        err = APIError("server error", status_code=503)
+        assert classify_error(err) == ErrorCategory.TRANSIENT
+
+    def test_classifies_permanent(self):
+        from agentic_cba_indicators.tools._http import (
+            APIError,
+            ErrorCategory,
+            classify_error,
+        )
+
+        err = APIError("bad request", status_code=400)
+        assert classify_error(err) == ErrorCategory.PERMANENT
 
 
 class TestAPIError:

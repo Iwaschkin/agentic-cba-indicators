@@ -42,7 +42,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from agentic_cba_indicators.logging_config import get_logger
+from agentic_cba_indicators.logging_config import get_correlation_id, get_logger
 
 # Module logger
 logger = get_logger(__name__)
@@ -396,6 +396,8 @@ def log_tool_invocation(
     """
     audit_logger = get_audit_logger()
     if audit_logger:
+        if session_id is None:
+            session_id = get_correlation_id()
         audit_logger.log_tool_invocation(
             tool_name=tool_name,
             params=params,

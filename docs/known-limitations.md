@@ -2,6 +2,8 @@
 
 This document describes known limitations of the Agentic CBA Indicators system. These are acknowledged constraints that don't require immediate resolution but are documented for transparency and future planning.
 
+**Last updated:** 2026-01-19
+
 ## Table of Contents
 
 - [Tool System](#tool-system)
@@ -66,6 +68,19 @@ This document describes known limitations of the Agentic CBA Indicators system. 
 **Rationale:** Strands framework handles tool execution; parallelism requires framework support.
 
 **Future:** Monitor Strands roadmap for async/parallel tool support.
+
+---
+
+### P3-024: Tool Context Discovery Relies on Agent Internals
+**Description:** Internal help tools inspect `ToolContext.agent.tool_registry` or `agent.tools`.
+
+**Impact:** Changes in Strands agent internals could break tool discovery.
+
+**Rationale:** No public API currently exposes the active tool registry.
+
+**Mitigation:** Module-level registry fallback (`set_active_tools()`) and unit tests.
+
+**Future:** Replace with official Strands API when available.
 
 ---
 
@@ -137,6 +152,19 @@ This document describes known limitations of the Agentic CBA Indicators system. 
 
 ---
 
+### P3-025: Heuristic Token Estimation
+**Description:** Token budgets use a provider-agnostic chars/4 heuristic, not tokenizer-specific counts.
+
+**Impact:** Estimates can deviate from actual provider token counts, affecting trimming precision.
+
+**Rationale:** Multi-provider support makes a single tokenizer (e.g., tiktoken) unreliable across models.
+
+**Mitigation:** `system_prompt_budget` reserves space for prompt + tools; trimming is conservative.
+
+**Future:** Add provider-specific tokenizers when unified APIs become available.
+
+---
+
 ## Reasoning & Planning
 
 ### P3-012: No Visible Planning Traces
@@ -185,14 +213,10 @@ This document describes known limitations of the Agentic CBA Indicators system. 
 
 ## Performance & Caching
 
-### P3-016: Geocoding Cache Thread Safety
-**Description:** Geocoding cache (LRU dict) is not thread-safe.
+### P3-016: Geocoding Cache Thread Safety ✅ MITIGATED
+**Description:** Geocoding cache was previously not thread-safe.
 
-**Impact:** Potential issues under heavy concurrent load.
-
-**Rationale:** Documented limitation. CLI and typical Streamlit usage are single-threaded.
-
-**Mitigation:** Document in module docstring. Consider `cachetools.TTLCache` with lock if needed.
+**Status:** **Mitigated in TASK120** - replaced with `cachetools.TTLCache` + `threading.Lock`.
 
 ---
 
@@ -285,16 +309,16 @@ This document describes known limitations of the Agentic CBA Indicators system. 
 
 | Category | Count | Critical | Mitigated |
 |----------|-------|----------|-----------|
-| Tool System | 5 | 0 | 1 (P3-003) |
+| Tool System | 6 | 0 | 1 (P3-003) |
 | Knowledge Base | 5 | 0 | 0 |
-| Memory & Context | 1 | 0 | 0 |
+| Memory & Context | 2 | 0 | 0 |
 | Reasoning & Planning | 4 | 0 | 0 |
-| Performance & Caching | 1 | 0 | 0 |
+| Performance & Caching | 1 | 0 | 1 (P3-016) |
 | Security & Validation | 2 | 0 | 0 |
 | Observability & Debugging | 1 | 0 | 0 |
 | Extensibility | 2 | 0 | 0 |
 | Prompts & Configuration | 2 | 0 | 0 |
-| **Total** | **23** | **0** | **1** |
+| **Total** | **25** | **0** | **2** |
 
 ## References
 

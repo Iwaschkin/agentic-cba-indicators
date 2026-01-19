@@ -33,18 +33,6 @@ anthropic = [
 bedrock = [
     { name = "strands-agents" },
 ]
-dev = [
-    { name = "mypy" },
-    { name = "pandas-stubs" },
-    { name = "pyright" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "python-dotenv" },
-    { name = "ruff" },
-    { name = "types-openpyxl" },
-    { name = "types-pyyaml" },
-]
 gemini = [
     { name = "strands-agents", extra = ["gemini"] },
 ]
@@ -56,31 +44,28 @@ openai = [
 dev = [
     { name = "black" },
     { name = "mypy" },
+    { name = "pandas-stubs" },
     { name = "pre-commit" },
     { name = "pyright" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "pytest-cov" },
+    { name = "python-dotenv" },
     { name = "ruff" },
     { name = "types-cachetools" },
+    { name = "types-openpyxl" },
+    { name = "types-pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "chromadb", specifier = ">=1.4.1" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
     { name = "openpyxl", specifier = ">=3.1.5" },
     { name = "pandas", specifier = ">=2.3.3" },
-    { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=2.3.0" },
     { name = "platformdirs", specifier = ">=4.0.0" },
     { name = "pymupdf", specifier = ">=1.26.7" },
-    { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.408" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
-    { name = "python-dotenv", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pyyaml", specifier = ">=6.0.3" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.0" },
     { name = "strands-agents", extras = ["anthropic"], marker = "extra == 'all-providers'", specifier = ">=1.22.0" },
     { name = "strands-agents", extras = ["anthropic"], marker = "extra == 'anthropic'", specifier = ">=1.22.0" },
     { name = "strands-agents", extras = ["bedrock"], marker = "extra == 'all-providers'", specifier = ">=1.22.0" },
@@ -91,21 +76,24 @@ requires-dist = [
     { name = "strands-agents", extras = ["openai"], marker = "extra == 'all-providers'", specifier = ">=1.22.0" },
     { name = "strands-agents", extras = ["openai"], marker = "extra == 'openai'", specifier = ">=1.22.0" },
     { name = "streamlit", specifier = ">=1.40.0" },
-    { name = "types-openpyxl", marker = "extra == 'dev'", specifier = ">=3.1.5" },
-    { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0.0" },
 ]
-provides-extras = ["anthropic", "openai", "bedrock", "gemini", "all-providers", "dev"]
+provides-extras = ["anthropic", "openai", "bedrock", "gemini", "all-providers"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=25.12.0" },
     { name = "mypy", specifier = ">=1.19.1" },
+    { name = "pandas-stubs", specifier = ">=2.3.0" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pyright", specifier = ">=1.1.408" },
     { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
     { name = "ruff", specifier = ">=0.14.13" },
     { name = "types-cachetools", specifier = ">=6.2.0.20251022" },
+    { name = "types-openpyxl", specifier = ">=3.1.5" },
+    { name = "types-pyyaml", specifier = ">=6.0.0" },
 ]
 
 [[package]]

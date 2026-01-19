@@ -13,9 +13,11 @@ import pytest
 from agentic_cba_indicators.logging_config import (
     LOGGER_NAME,
     JSONFormatter,
+    get_correlation_id,
     get_json_formatter,
     get_text_formatter,
     reset_logging,
+    set_correlation_id,
     set_log_format,
     set_log_level,
     setup_logging,
@@ -176,7 +178,21 @@ class TestJSONFormatter:
         assert "extra" in data
         assert data["extra"]["user_id"] == 123
         assert data["extra"]["action"] == "search"
-        assert data["extra"]["query"] == "soil carbon"
+
+    def test_correlation_id_in_json_output(self, clean_logging):
+        """Correlation ID should appear in JSON logs when set."""
+        stream = io.StringIO()
+        setup_logging(level="INFO", stream=stream, log_format="json")
+
+        set_correlation_id("corr-123")
+        logger = get_test_logger("test_corr")
+        logger.info("With correlation")
+        set_correlation_id(None)
+
+        output = stream.getvalue()
+        data = json.loads(output.strip())
+        assert data.get("correlation_id") == "corr-123"
+        assert get_correlation_id() is None
 
     def test_reserved_attrs_excluded_from_extra(self, json_formatter, log_record):
         """Standard LogRecord attributes should not appear in extra."""

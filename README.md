@@ -177,6 +177,10 @@ python scripts/ingest_excel.py
 - [Known Limitations](docs/known-limitations.md) - Documented constraints and limitations
 - [Architecture Decision Records](docs/adr/README.md) - Key design decisions
 
+## Contributing
+
+See CONTRIBUTING.md for tool authoring guidelines and testing expectations.
+
 ## License
 
 MIT

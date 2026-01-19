@@ -5,25 +5,33 @@ Provides consistent coordinate lookup from city/place names
 using the Open-Meteo geocoding API (free, no API key required).
 
 Thread Safety:
-    This module uses a simple in-memory cache (OrderedDict) that is NOT
-    thread-safe. The module assumes single-threaded operation, which is
-    the default for Strands Agents tool execution.
-
-    If you need thread-safe operation (e.g., async/concurrent requests):
-    - Use threading.Lock around cache access
-    - Or replace _geocode_cache with cachetools.LRUCache + lock
-    - Or use functools.lru_cache (thread-safe in Python 3.2+)
+    This module uses cachetools.TTLCache with threading.Lock for
+    thread-safe geocoding cache access. Safe for concurrent use
+    in multi-threaded contexts (e.g., Streamlit, async handlers).
 """
 
 import os
-from collections import OrderedDict
+import threading
 from typing import TypedDict
+
+from cachetools import TTLCache
 
 from ._http import APIError, fetch_json
 
-# Simple bounded in-memory cache to avoid repeated geocoding requests
+# Thread-safe geocoding cache with TTL
+# Using TTLCache avoids memory growth from long-running sessions
 MAX_CACHE_SIZE = int(os.environ.get("AGENTIC_CBA_GEO_CACHE_SIZE", "256"))
-_geocode_cache: OrderedDict[str, dict | None] = OrderedDict()
+GEO_CACHE_TTL = int(os.environ.get("AGENTIC_CBA_GEO_CACHE_TTL", "86400"))  # 24 hours
+_geocode_cache: TTLCache[str, dict | None] = TTLCache(
+    maxsize=MAX_CACHE_SIZE, ttl=GEO_CACHE_TTL
+)
+_geocode_lock = threading.Lock()
+
+
+def clear_geocode_cache() -> None:
+    """Clear the geocoding cache. Primarily for testing."""
+    with _geocode_lock:
+        _geocode_cache.clear()
 
 
 class GeoLocation(TypedDict):
@@ -88,6 +96,7 @@ def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
     Get latitude and longitude for a city name.
 
     Uses Open-Meteo geocoding API (free, no API key).
+    Thread-safe cache with TTL.
 
     Args:
         city: Name of the city (e.g., "London", "New York")
@@ -98,21 +107,24 @@ def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
     """
     cache_key = city.lower().strip()
 
-    # Check cache
-    if use_cache and cache_key in _geocode_cache:
-        cached = _geocode_cache[cache_key]
-        _geocode_cache.move_to_end(cache_key)
-        if cached is None:
-            return None
-        # Return cached result as GeoLocation
-        return GeoLocation(
-            name=cached.get("name", ""),
-            country=cached.get("country", ""),
-            latitude=cached.get("latitude", 0.0),
-            longitude=cached.get("longitude", 0.0),
-            admin1=cached.get("admin1"),
-            timezone=cached.get("timezone"),
-        )
+    # Check cache (thread-safe)
+    if use_cache:
+        with _geocode_lock:
+            cached = _geocode_cache.get(cache_key)
+            if cached is not None:
+                # Check if we cached a "not found" result (empty dict marker)
+                # Must check BEFORE returning, as empty dict is falsy but not None
+                if not cached:
+                    return None
+                # Return cached result as GeoLocation
+                return GeoLocation(
+                    name=cached.get("name", ""),
+                    country=cached.get("country", ""),
+                    latitude=cached.get("latitude", 0.0),
+                    longitude=cached.get("longitude", 0.0),
+                    admin1=cached.get("admin1"),
+                    timezone=cached.get("timezone"),
+                )
 
     try:
         data = fetch_json(
@@ -121,7 +133,9 @@ def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
         )
 
         if not isinstance(data, dict) or "results" not in data or not data["results"]:
-            _geocode_cache[cache_key] = None
+            if use_cache:
+                with _geocode_lock:
+                    _geocode_cache[cache_key] = {}  # Empty dict marks "not found"
             return None
 
         result = data["results"][0]
@@ -134,20 +148,17 @@ def geocode_city(city: str, use_cache: bool = True) -> GeoLocation | None:
             "timezone": result.get("timezone"),
         }
 
-        # Cache the result
+        # Cache the result (thread-safe)
         if use_cache:
-            _geocode_cache[cache_key] = dict(location)
-            _geocode_cache.move_to_end(cache_key)
-            if len(_geocode_cache) > MAX_CACHE_SIZE:
-                _geocode_cache.popitem(last=False)
+            with _geocode_lock:
+                _geocode_cache[cache_key] = dict(location)
 
         return location
 
     except APIError:
-        _geocode_cache[cache_key] = None
-        _geocode_cache.move_to_end(cache_key)
-        if len(_geocode_cache) > MAX_CACHE_SIZE:
-            _geocode_cache.popitem(last=False)
+        if use_cache:
+            with _geocode_lock:
+                _geocode_cache[cache_key] = {}  # Empty dict marks "not found"
         return None
 
 
@@ -205,5 +216,5 @@ def format_location(lat: float, lon: float, precision: int = 4) -> str:
 
 def clear_cache() -> None:
     """Clear the geocoding cache."""
-    global _geocode_cache
-    _geocode_cache = OrderedDict()
+    with _geocode_lock:
+        _geocode_cache.clear()

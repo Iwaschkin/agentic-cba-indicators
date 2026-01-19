@@ -30,7 +30,11 @@ from agentic_cba_indicators.config import (
     load_config,
     print_provider_info,
 )
-from agentic_cba_indicators.memory import TokenBudgetConversationManager
+from agentic_cba_indicators.logging_config import set_correlation_id
+from agentic_cba_indicators.memory import (
+    TokenBudgetConversationManager,
+    estimate_tokens_heuristic,
+)
 from agentic_cba_indicators.prompts import get_system_prompt
 from agentic_cba_indicators.security import (
     detect_injection_patterns,
@@ -40,7 +44,25 @@ from agentic_cba_indicators.tools import FULL_TOOLS, REDUCED_TOOLS
 from agentic_cba_indicators.tools._help import set_active_tools
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
     from pathlib import Path
+
+
+def _estimate_system_prompt_budget(
+    system_prompt: str, tools: Sequence[Callable[..., str]]
+) -> int:
+    """Estimate token budget needed for system prompt and tool definitions.
+
+    This uses the heuristic estimator to keep provider-agnostic behavior.
+    Tool definitions are approximated using tool names and docstrings.
+    """
+    parts = [system_prompt]
+    for tool in tools:
+        name = getattr(tool, "__name__", str(tool))
+        doc = getattr(tool, "__doc__", "") or ""
+        parts.append(f"{name}\n{doc}")
+
+    return estimate_tokens_heuristic("\n\n".join(parts))
 
 
 def create_agent_from_config(
@@ -70,11 +92,19 @@ def create_agent_from_config(
     # Create the model
     model = create_model(provider_config)
 
+    # Select tool set (includes internal help tools)
+    tools = FULL_TOOLS if agent_config.tool_set == "full" else REDUCED_TOOLS
+
+    # Build system prompt and estimate reserved budget
+    system_prompt = get_system_prompt()
+    system_prompt_budget = _estimate_system_prompt_budget(system_prompt, tools)
+
     # Configure conversation memory
     # Use token-budget manager if context_budget is set, otherwise fall back to sliding window
     if agent_config.context_budget is not None:
         conversation_manager = TokenBudgetConversationManager(
             max_tokens=agent_config.context_budget,
+            system_prompt_budget=system_prompt_budget,
         )
     else:
         # Legacy mode: use fixed message count
@@ -82,19 +112,17 @@ def create_agent_from_config(
             window_size=agent_config.conversation_window,
         )
 
-    # Select tool set (includes internal help tools)
-    tools = FULL_TOOLS if agent_config.tool_set == "full" else REDUCED_TOOLS
-
     # Register active tools for internal help system
     # This allows list_tools() and search_tools() to reflect the actual tool set
     set_active_tools(tools)
 
     # Create agent with selected tools
+    # Convert tuple to list since Agent expects list type
     agent = Agent(
         model=model,
-        system_prompt=get_system_prompt(),
+        system_prompt=system_prompt,
         conversation_manager=conversation_manager,
-        tools=tools,
+        tools=list(tools),
     )
 
     return agent, provider_config, agent_config
@@ -123,13 +151,18 @@ def create_agent(
     )
 
     # Default token budget for legacy interface (conservative)
-    conversation_manager = TokenBudgetConversationManager(max_tokens=8000)
+    system_prompt = get_system_prompt()
+    system_prompt_budget = _estimate_system_prompt_budget(system_prompt, REDUCED_TOOLS)
+    conversation_manager = TokenBudgetConversationManager(
+        max_tokens=8000,
+        system_prompt_budget=system_prompt_budget,
+    )
 
     agent = Agent(
         model=ollama_model,
-        system_prompt=get_system_prompt(),
+        system_prompt=system_prompt,
         conversation_manager=conversation_manager,
-        tools=REDUCED_TOOLS,
+        tools=list(REDUCED_TOOLS),
     )
 
     return agent
@@ -213,6 +246,7 @@ def main() -> None:
     """Main entry point for the CLI chatbot."""
     import argparse
     import sys
+    import uuid
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
@@ -301,12 +335,19 @@ def main() -> None:
                     "Potential injection pattern detected: %s", patterns
                 )
 
-            print("\nAssistant: ", end="", flush=True)
+            # CR-0016: correlation_id inside try for proper cleanup on any exception
+            try:
+                correlation_id = str(uuid.uuid4())
+                set_correlation_id(correlation_id)
 
-            # Get response from agent (streams to stdout by default)
-            agent(safe_input)
+                print("\nAssistant: ", end="", flush=True)
 
-            print("\n")  # Add spacing after response
+                # Get response from agent (streams to stdout by default)
+                agent(safe_input)
+
+                print("\n")  # Add spacing after response
+            finally:
+                set_correlation_id(None)
 
         except KeyboardInterrupt:
             print("\n\n👋 Interrupted. Goodbye!\n")
@@ -315,7 +356,5 @@ def main() -> None:
             print(f"\n❌ Error: {e}\n")
 
 
-if __name__ == "__main__":
-    main()
 if __name__ == "__main__":
     main()

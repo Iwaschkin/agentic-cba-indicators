@@ -6,6 +6,7 @@ from strands import tool
 
 from ._geo import geocode_city
 from ._http import APIError, fetch_json, format_error
+from ._timeout import timeout
 
 # WMO Weather Code descriptions (plain text, for current weather)
 # See: https://open-meteo.com/en/docs#weathervariables
@@ -60,6 +61,7 @@ WEATHER_CODE_EMOJI: Final[dict[int, str]] = {
 
 
 @tool
+@timeout(30)
 def get_current_weather(city: str) -> str:
     """
     Get current weather conditions for a city.
@@ -107,6 +109,7 @@ def get_current_weather(city: str) -> str:
 
 
 @tool
+@timeout(30)
 def get_weather_forecast(city: str, days: int = 7) -> str:
     """
     Get weather forecast for a city.
@@ -155,12 +158,15 @@ def get_weather_forecast(city: str, days: int = 7) -> str:
     precip = daily.get("precipitation_sum", [])
     wind = daily.get("wind_speed_10m_max", [])
 
-    for i in range(len(dates)):
-        weather_desc = WEATHER_CODE_EMOJI.get(weather[i], "Unknown")
+    # CR-0019: Use zip to safely iterate even if arrays have mismatched lengths
+    for date, t_max, t_min, weather_code, prec, wnd in zip(
+        dates, temps_max, temps_min, weather, precip, wind, strict=False
+    ):
+        weather_desc = WEATHER_CODE_EMOJI.get(weather_code, "Unknown")
         forecast_lines.append(
-            f"📅 {dates[i]}: {weather_desc}\n"
-            f"   High: {temps_max[i]}°C | Low: {temps_min[i]}°C | "
-            f"Precip: {precip[i]}mm | Wind: {wind[i]}km/h"
+            f"📅 {date}: {weather_desc}\n"
+            f"   High: {t_max}°C | Low: {t_min}°C | "
+            f"Precip: {prec}mm | Wind: {wnd}km/h"
         )
 
     return "\n".join(forecast_lines)

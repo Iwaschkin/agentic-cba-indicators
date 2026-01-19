@@ -146,8 +146,8 @@ __all__ = [
 ]
 
 
-# Reduced tool set (24 tools) - good for most models
-REDUCED_TOOLS = [
+# Reduced tool set (23 tools) - good for most models
+REDUCED_TOOLS = (
     # Internal Help (agent self-discovery)
     list_tools,
     list_tools_by_category,
@@ -178,11 +178,11 @@ REDUCED_TOOLS = [
     export_indicator_selection,
     # Use Cases
     search_usecases,
-]
+)
 
 
-# Full tool set (62 tools) - for models with large context
-FULL_TOOLS = [
+# Full tool set (61 tools) - for models with large context
+FULL_TOOLS = (
     # Internal Help (agent self-discovery)
     list_tools,
     list_tools_by_category,
@@ -257,4 +257,4 @@ FULL_TOOLS = [
     search_usecases,
     get_usecase_details,
     get_usecases_by_indicator,
-]
+)

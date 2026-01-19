@@ -11,6 +11,7 @@ Uses "polite pool" (faster rate limits) when CROSSREF_EMAIL is set.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +33,9 @@ CROSSREF_TIMEOUT = float(os.environ.get("CROSSREF_TIMEOUT", "15.0"))
 # Without mailto: ~1 req/sec (public pool)
 # We'll be conservative with batch operations
 CROSSREF_BATCH_DELAY = float(os.environ.get("CROSSREF_BATCH_DELAY", "0.1"))
+
+# Pre-compiled regex for HTML tag removal (used in abstract cleanup)
+_HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 
 
 @dataclass
@@ -163,10 +167,8 @@ def _parse_crossref_response(doi: str, data: dict[str, Any]) -> CrossRefMetadata
     # Extract abstract (may contain HTML/XML)
     abstract = data.get("abstract")
     if abstract:
-        # Basic cleanup of JATS XML tags
-        import re
-
-        abstract = re.sub(r"<[^>]+>", "", abstract)
+        # Basic cleanup of JATS XML tags using pre-compiled pattern
+        abstract = _HTML_TAG_PATTERN.sub("", abstract)
         abstract = abstract.strip()
 
     # Extract ISSN (prefer print, then electronic)

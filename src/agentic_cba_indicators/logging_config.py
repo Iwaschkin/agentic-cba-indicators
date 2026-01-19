@@ -34,6 +34,7 @@ import logging
 import os
 import sys
 import traceback
+from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -55,6 +56,29 @@ LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 LOG_FORMAT_SIMPLE = "%(levelname)s: %(message)s"
 
 _logging_configured = False
+
+# Correlation ID context (per request/tool call)
+_correlation_id: ContextVar[str | None] = ContextVar("correlation_id", default=None)
+
+
+def set_correlation_id(value: str | None) -> None:
+    """Set the correlation ID for the current context."""
+    _correlation_id.set(value)
+
+
+def get_correlation_id() -> str | None:
+    """Get the correlation ID for the current context."""
+    return _correlation_id.get()
+
+
+class CorrelationIdFilter(logging.Filter):
+    """Inject correlation_id into log records when present."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        correlation_id = get_correlation_id()
+        if correlation_id:
+            record.correlation_id = correlation_id
+        return True
 
 
 class JSONFormatter(logging.Formatter):
@@ -129,6 +153,11 @@ class JSONFormatter(logging.Formatter):
             log_dict["exc_info"] = "".join(
                 traceback.format_exception(*record.exc_info)
             ).strip()
+
+        # Add correlation ID if present
+        correlation_id = getattr(record, "correlation_id", None)
+        if correlation_id:
+            log_dict["correlation_id"] = correlation_id
 
         # Add any extra fields (user-provided context)
         extra = {
@@ -241,6 +270,7 @@ def setup_logging(
     if not package_logger.handlers:
         handler = logging.StreamHandler(stream)
         handler.setLevel(numeric_level)
+        handler.addFilter(CorrelationIdFilter())
 
         # Select formatter based on format type
         if log_format == "json":

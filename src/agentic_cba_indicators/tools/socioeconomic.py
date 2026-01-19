@@ -4,6 +4,7 @@ from strands import tool
 
 from ._http import APIError, fetch_json, format_error
 from ._mappings import COUNTRY_CODES_ISO2, normalize_key
+from ._timeout import timeout
 
 
 def _get_country_code(country: str) -> str:
@@ -19,6 +20,7 @@ def _get_country_code(country: str) -> str:
 
 
 @tool
+@timeout(30)
 def get_country_indicators(country: str) -> str:
     """
     Get basic country information and socio-economic indicators.
@@ -106,6 +108,7 @@ Official Name: {official_name}
 
 
 @tool
+@timeout(30)
 def get_world_bank_data(country: str, indicator: str = "gdp") -> str:
     """
     Get World Bank economic indicators for a country.
