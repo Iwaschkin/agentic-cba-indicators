@@ -1,4 +1,18 @@
-# Custom tools for weather, climate, and socio-economic data
+"""Custom tools for weather, climate, and socio-economic data."""
+
+from __future__ import annotations
+
+import functools
+import inspect
+import os
+import time
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+from agentic_cba_indicators.audit import log_tool_invocation
+from agentic_cba_indicators.observability import instrument_tool
 
 # Internal help tools (for agent self-discovery)
 # These are included in tool sets for agent access but hidden from users
@@ -7,6 +21,9 @@ from ._help import list_tools as list_tools
 from ._help import list_tools_by_category as list_tools_by_category
 from ._help import search_tools as search_tools
 from ._help import set_active_tools as set_active_tools
+from ._http import classify_error
+from ._parallel import run_tools_parallel as run_tools_parallel
+from ._timeout import timeout
 from .agriculture import (
     get_crop_production,
     get_forest_statistics,
@@ -78,6 +95,81 @@ from .socioeconomic import get_country_indicators, get_world_bank_data
 from .soilgrids import get_soil_carbon, get_soil_properties, get_soil_texture
 from .weather import get_current_weather, get_weather_forecast
 
+_DEFAULT_TOOL_TIMEOUT_SECONDS = float(os.environ.get("TOOL_DEFAULT_TIMEOUT", "30"))
+
+
+def _extract_params(
+    func: Callable[..., str], args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> dict[str, Any]:
+    """Extract parameters for audit logging, excluding ToolContext."""
+    try:
+        signature = inspect.signature(func)
+        bound = signature.bind_partial(*args, **kwargs)
+        params = dict(bound.arguments)
+    except (TypeError, ValueError):
+        params = {"args": args, "kwargs": kwargs}
+
+    params.pop("tool_context", None)
+    return params
+
+
+def _wrap_with_audit(func: Callable[..., str]) -> Callable[..., str]:
+    """Wrap a tool with audit logging."""
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> str:
+        start_time = time.perf_counter()
+        success = True
+        error_message: str | None = None
+        result_text: str | None = None
+
+        try:
+            result = func(*args, **kwargs)
+            result_text = result if isinstance(result, str) else str(result)
+            return result
+        except Exception as exc:
+            success = False
+            category = classify_error(exc).value
+            error_message = f"[category: {category}] {exc!s}"
+            raise
+        finally:
+            latency = time.perf_counter() - start_time
+            params = _extract_params(func, args, kwargs)
+            log_tool_invocation(
+                tool_name=getattr(func, "__name__", str(func)),
+                params=params,
+                result=result_text,
+                success=success,
+                latency=latency,
+                error=error_message,
+            )
+
+    return wrapper
+
+
+def _wrap_tool(tool_func: Callable[..., str]) -> Callable[..., str]:
+    """Apply timeout, audit logging, and metrics to a tool function."""
+    if getattr(tool_func, "__agentic_tool_wrapped__", False):
+        return tool_func
+
+    wrapped = tool_func
+
+    if not getattr(wrapped, "__tool_timeout_wrapped__", False):
+        wrapped = timeout(_DEFAULT_TOOL_TIMEOUT_SECONDS)(wrapped)
+
+    wrapped = _wrap_with_audit(wrapped)
+    wrapped = instrument_tool(wrapped)
+
+    wrapped.__agentic_tool_wrapped__ = True  # type: ignore[attr-defined]
+    return wrapped
+
+
+def _prepare_toolset(
+    tools: tuple[Callable[..., str], ...],
+) -> tuple[Callable[..., str], ...]:
+    return tuple(_wrap_tool(tool) for tool in tools)
+
+
 __all__ = [
     "FULL_TOOLS",
     "REDUCED_TOOLS",
@@ -132,6 +224,7 @@ __all__ = [
     "list_knowledge_base_stats",
     "list_tools",
     "list_tools_by_category",
+    "run_tools_parallel",
     "search_commodity_data",
     "search_fao_indicators",
     "search_gender_indicators",
@@ -147,12 +240,13 @@ __all__ = [
 
 
 # Reduced tool set (23 tools) - good for most models
-REDUCED_TOOLS = (
+_REDUCED_TOOLS_RAW = (
     # Internal Help (agent self-discovery)
     list_tools,
     list_tools_by_category,
     search_tools,
     describe_tool,
+    run_tools_parallel,
     # Weather
     get_current_weather,
     get_weather_forecast,
@@ -182,12 +276,13 @@ REDUCED_TOOLS = (
 
 
 # Full tool set (61 tools) - for models with large context
-FULL_TOOLS = (
+_FULL_TOOLS_RAW = (
     # Internal Help (agent self-discovery)
     list_tools,
     list_tools_by_category,
     search_tools,
     describe_tool,
+    run_tools_parallel,
     # Weather & Climate
     get_current_weather,
     get_weather_forecast,
@@ -258,3 +353,7 @@ FULL_TOOLS = (
     get_usecase_details,
     get_usecases_by_indicator,
 )
+
+
+REDUCED_TOOLS = _prepare_toolset(_REDUCED_TOOLS_RAW)
+FULL_TOOLS = _prepare_toolset(_FULL_TOOLS_RAW)

@@ -57,6 +57,8 @@ class TestConfigurationLoading:
 
         assert agent_config is not None
         assert agent_config.tool_set in ["reduced", "full"]
+        assert isinstance(agent_config.parallel_tool_calls, bool)
+        assert isinstance(agent_config.prompt_name, str)
 
 
 class TestAgentCreation:
@@ -114,6 +116,60 @@ agent:
         )
 
         assert provider_config.name == "anthropic"
+
+        def test_parallel_tool_included_when_enabled(self, monkeypatch, tmp_path):
+            from agentic_cba_indicators.cli import create_agent_from_config
+
+            config_content = """
+active_provider: ollama
+
+providers:
+    ollama:
+        host: "http://localhost:11434"
+        model_id: "llama3.1:latest"
+
+agent:
+    tool_set: reduced
+    conversation_window: 5
+    parallel_tool_calls: true
+"""
+            config_path = tmp_path / "test_config.yaml"
+            config_path.write_text(config_content)
+
+            mock_model = MagicMock()
+            monkeypatch.setattr(
+                "agentic_cba_indicators.cli.create_model", lambda x: mock_model
+            )
+
+            agent, _, _ = create_agent_from_config(config_path=config_path)
+            assert any(t.__name__ == "run_tools_parallel" for t in agent.tools)
+
+        def test_parallel_tool_excluded_when_disabled(self, monkeypatch, tmp_path):
+            from agentic_cba_indicators.cli import create_agent_from_config
+
+            config_content = """
+active_provider: ollama
+
+providers:
+    ollama:
+        host: "http://localhost:11434"
+        model_id: "llama3.1:latest"
+
+agent:
+    tool_set: reduced
+    conversation_window: 5
+    parallel_tool_calls: false
+"""
+            config_path = tmp_path / "test_config.yaml"
+            config_path.write_text(config_content)
+
+            mock_model = MagicMock()
+            monkeypatch.setattr(
+                "agentic_cba_indicators.cli.create_model", lambda x: mock_model
+            )
+
+            agent, _, _ = create_agent_from_config(config_path=config_path)
+            assert all(t.__name__ != "run_tools_parallel" for t in agent.tools)
 
 
 # ============================================================================

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import atexit
+import os
+import threading
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError
 from functools import wraps
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -20,6 +22,9 @@ T = TypeVar("T")
 # Using 4 workers as a balance between parallelism and resource usage
 _MAX_TIMEOUT_WORKERS = 4
 _timeout_executor: ThreadPoolExecutor | None = None
+_timeout_failures = 0
+_timeout_failure_lock = threading.Lock()
+_MAX_TIMEOUT_FAILURES = int(os.environ.get("AGENTIC_CBA_TIMEOUT_FAILURES", "3"))
 
 
 def _get_executor() -> ThreadPoolExecutor:
@@ -62,10 +67,14 @@ def timeout(seconds: float) -> Callable[[Callable[..., T]], Callable[..., T]]:
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
+            global _timeout_failures
             executor = _get_executor()
             future: Future[T] = executor.submit(func, *args, **kwargs)
             try:
-                return future.result(timeout=seconds)
+                result = future.result(timeout=seconds)
+                with _timeout_failure_lock:
+                    _timeout_failures = 0
+                return result
             except TimeoutError as e:
                 # CR-0008: Cancel the future on timeout (best effort)
                 future.cancel()
@@ -74,9 +83,21 @@ def timeout(seconds: float) -> Callable[[Callable[..., T]], Callable[..., T]]:
                     getattr(func, "__name__", str(func)),
                     seconds,
                 )
+                with _timeout_failure_lock:
+                    _timeout_failures += 1
+                    if _timeout_failures >= _MAX_TIMEOUT_FAILURES:
+                        logger.warning(
+                            "Resetting timeout executor after %d consecutive timeouts",
+                            _timeout_failures,
+                        )
+                        _shutdown_executor()
+                        _timeout_failures = 0
                 raise ToolTimeoutError(
                     f"Tool '{getattr(func, '__name__', 'unknown')}' exceeded {seconds}s timeout"
                 ) from e
+
+        wrapper.__tool_timeout_seconds__ = seconds  # type: ignore[attr-defined]
+        wrapper.__tool_timeout_wrapped__ = True  # type: ignore[attr-defined]
 
         return wrapper
 

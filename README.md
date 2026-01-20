@@ -82,9 +82,15 @@ providers:
 agent:
   tool_set: reduced  # or "full" for cloud models
   conversation_window: 5
+  prompt_name: system_prompt_minimal  # or system_prompt
+  parallel_tool_calls: false
 ```
 
 Environment variables are supported using `${VAR_NAME}` syntax.
+
+Prompt selection:
+- `prompt_name` in providers.yaml (recommended)
+- `AGENTIC_CBA_PROMPT` environment variable (overrides default prompt)
 
 ## Data Storage
 

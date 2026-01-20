@@ -134,6 +134,15 @@
 - TASK125 tool context audit ✅
 - TASK126 known-limitations update ✅
 
+## Completed (Code Review v5 Remediation)
+- TASK131 UI prompt selection respects config ✅
+- TASK132 Gemini top_p propagation ✅
+- TASK133 Batch embedding JSON hardening ✅
+- TASK134 Timeout metadata flags fixed ✅
+- TASK135 Timeout executor reset mitigation ✅
+- TASK136 Entry point logging setup wired ✅
+- TASK137 logging_config docstring aligned ✅
+
 ## Completed (Code Review v2 Action Plan)
 - TASK127 Standardize tool context usage ✅
 - TASK128 Add knowledge base query caching ✅

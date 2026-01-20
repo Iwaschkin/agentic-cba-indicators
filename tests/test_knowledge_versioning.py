@@ -154,18 +154,72 @@ class TestGetKnowledgeVersionTool:
         """Verify get_knowledge_version is in REDUCED_TOOLS."""
         from agentic_cba_indicators.tools import REDUCED_TOOLS, get_knowledge_version
 
-        # The tool function should be in the list
-        assert get_knowledge_version in REDUCED_TOOLS
+        # Wrapped tools preserve original names
+        assert any(t.__name__ == get_knowledge_version.__name__ for t in REDUCED_TOOLS)
 
     def test_tool_in_full_tools(self) -> None:
         """Verify get_knowledge_version is in FULL_TOOLS."""
         from agentic_cba_indicators.tools import FULL_TOOLS, get_knowledge_version
 
-        # The tool function should be in the list
-        assert get_knowledge_version in FULL_TOOLS
+        # Wrapped tools preserve original names
+        assert any(t.__name__ == get_knowledge_version.__name__ for t in FULL_TOOLS)
 
     def test_tool_in_all_exports(self) -> None:
         """Verify get_knowledge_version is in __all__."""
         from agentic_cba_indicators import tools
 
         assert "get_knowledge_version" in tools.__all__
+
+
+class TestKnowledgeFreshnessWarning:
+    """Test knowledge base staleness warnings."""
+
+    def test_staleness_warning_emitted(self, monkeypatch) -> None:
+        from agentic_cba_indicators.tools import knowledge_base as kb
+
+        class DummyCollection:
+            def count(self) -> int:
+                return 1
+
+            def get(self, **kwargs):
+                return {
+                    "metadatas": [{"ingestion_timestamp": "2020-01-01T00:00:00+00:00"}]
+                }
+
+        class DummyClient:
+            def list_collections(self):
+                return [type("C", (), {"name": "indicators"})]
+
+            def get_collection(self, name: str):
+                return DummyCollection()
+
+        monkeypatch.setattr(kb, "_get_chroma_client", lambda: DummyClient())
+        monkeypatch.setattr(kb, "_KB_FRESHNESS_TTL_DAYS", 1.0)
+
+        result = kb.get_knowledge_version()
+        assert "stale" in result.lower()
+
+    def test_staleness_warning_disabled_when_no_ttl(self, monkeypatch) -> None:
+        from agentic_cba_indicators.tools import knowledge_base as kb
+
+        class DummyCollection:
+            def count(self) -> int:
+                return 1
+
+            def get(self, **kwargs):
+                return {
+                    "metadatas": [{"ingestion_timestamp": "2020-01-01T00:00:00+00:00"}]
+                }
+
+        class DummyClient:
+            def list_collections(self):
+                return [type("C", (), {"name": "indicators"})]
+
+            def get_collection(self, name: str):
+                return DummyCollection()
+
+        monkeypatch.setattr(kb, "_get_chroma_client", lambda: DummyClient())
+        monkeypatch.setattr(kb, "_KB_FRESHNESS_TTL_DAYS", None)
+
+        result = kb.get_knowledge_version()
+        assert "stale" not in result.lower()

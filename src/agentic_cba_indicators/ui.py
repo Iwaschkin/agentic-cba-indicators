@@ -27,6 +27,7 @@ from agentic_cba_indicators.config import (
     get_provider_config,
     load_config,
 )
+from agentic_cba_indicators.logging_config import setup_logging
 from agentic_cba_indicators.memory import (
     TokenBudgetConversationManager,
     estimate_tokens_heuristic,
@@ -125,7 +126,7 @@ def create_agent_for_ui(
     model = create_model(provider_config)
 
     tools = FULL_TOOLS if tool_set == "full" else REDUCED_TOOLS
-    system_prompt = get_system_prompt()
+    system_prompt = get_system_prompt(agent_config.prompt_name)
 
     # CR-0009: Calculate system_prompt_budget to match CLI behavior
     system_prompt_budget = _estimate_system_prompt_budget(system_prompt, list(tools))
@@ -410,6 +411,8 @@ def main() -> None:
             "This module must be run with Streamlit. Use: streamlit run "
             "src/agentic_cba_indicators/ui.py"
         )
+
+    setup_logging()
 
     # --- Page Configuration ---
     st.set_page_config(

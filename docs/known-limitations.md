@@ -2,7 +2,7 @@
 
 This document describes known limitations of the Agentic CBA Indicators system. These are acknowledged constraints that don't require immediate resolution but are documented for transparency and future planning.
 
-**Last updated:** 2026-01-19
+**Last updated:** 2026-01-20
 
 ## Table of Contents
 
@@ -60,14 +60,14 @@ This document describes known limitations of the Agentic CBA Indicators system. 
 
 ---
 
-### P3-005: No Parallel Tool Execution
-**Description:** Tools run sequentially; no concurrent execution support.
+### P3-005: Limited Parallel Tool Execution
+**Description:** Tools run sequentially by default; parallel execution requires explicit use of the internal helper.
 
-**Impact:** Multi-tool queries take longer than necessary.
+**Impact:** Multi-tool queries take longer unless parallel helper is invoked.
 
-**Rationale:** Strands framework handles tool execution; parallelism requires framework support.
+**Mitigation:** Internal `run_tools_parallel` helper supports bounded parallelism for read-only tools.
 
-**Future:** Monitor Strands roadmap for async/parallel tool support.
+**Future:** Monitor Strands roadmap for native async/parallel tool support.
 
 ---
 
@@ -100,22 +100,24 @@ This document describes known limitations of the Agentic CBA Indicators system. 
 ### P3-007: No Cross-Attention Re-ranking
 **Description:** No query-document cross-attention for re-ranking search results.
 
-**Impact:** Search relies purely on embedding similarity.
+**Impact:** Search relies primarily on embedding similarity.
 
-**Rationale:** Current semantic search quality is acceptable. Re-ranking adds latency and complexity.
+**Mitigation:** Optional lexical reranking is available for KB search tools (`rerank=True`).
+
+**Rationale:** Cross-attention adds latency and complexity; lexical rerank is a light-weight alternative.
 
 **Future:** Consider if search quality issues are reported.
 
 ---
 
-### P3-008: No Knowledge Staleness Detection
-**Description:** No mechanism to detect or invalidate stale knowledge.
+### P3-008: Limited Knowledge Staleness Detection
+**Description:** Staleness detection is opt-in and warning-only.
 
-**Impact:** KB may contain outdated information if source data changes.
+**Impact:** KB may contain outdated information if source data changes and TTL is not configured.
 
 **Rationale:** Source data (Excel files) are manually versioned. Versioning metadata (TASK102) tracks ingestion time.
 
-**Mitigation:** Clear KB and re-ingest when source data updates.
+**Mitigation:** Set `KB_FRESHNESS_TTL_DAYS` to enable staleness warnings; clear KB and re-ingest when source data updates.
 
 ---
 

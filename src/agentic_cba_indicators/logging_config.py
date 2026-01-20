@@ -225,7 +225,7 @@ def setup_logging(
     Configure logging for the package.
 
     Should be called once at application startup (e.g., in cli.py main()).
-    Subsequent calls are no-ops unless force=True.
+    Subsequent calls are no-ops by default.
 
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR). Default: WARNING

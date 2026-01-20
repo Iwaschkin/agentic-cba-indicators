@@ -9,6 +9,15 @@
 
 ## Completed
 
+### Code Review v5 Remediation - Phase 1-3 (COMPLETE)
+- [TASK131] Fix UI prompt selection - P1 ✅
+- [TASK132] Apply Gemini top_p config - P2 ✅
+- [TASK133] Harden batch embedding JSON parsing - P1 ✅
+- [TASK134] Fix timeout metadata flags - P2 ✅
+- [TASK135] Mitigate timeout thread exhaustion - P1 ✅
+- [TASK136] Wire entry point logging setup - P1 ✅
+- [TASK137] Align logging docs with signature - P2 ✅
+
 ### Code Review v2 Action Plan - Phase 3 (Medium Priority)
 - [TASK127] Standardize tool context usage - P3 - ATI-004 ✅
 - [TASK128] Add knowledge base query caching - P3 - KBI-001 ✅

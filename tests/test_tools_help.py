@@ -74,6 +74,19 @@ class TestGetToolsFromContext:
         tools = _get_tools_from_context(context_with_tools)
         assert len(tools) == len(REDUCED_TOOLS)
 
+    def test_module_registry_has_priority_over_context(
+        self, context_with_tools: MagicMock
+    ) -> None:
+        """Verify module registry is preferred when populated."""
+
+        def dummy_tool() -> str:
+            return "dummy"
+
+        set_active_tools([dummy_tool])
+        tools = _get_tools_from_context(context_with_tools)
+        assert len(tools) == 1
+        assert tools[0].__name__ == "dummy_tool"
+
     def test_returns_tool_registry_when_available(
         self, context_with_tool_registry: MagicMock
     ) -> None:

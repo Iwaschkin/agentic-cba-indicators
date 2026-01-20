@@ -75,6 +75,13 @@ agent:
   # Use "reduced" for smaller models, "full" for larger cloud models
   tool_set: reduced
 
+  # Prompt selection (file name without .md extension)
+  # Options: system_prompt_minimal (default), system_prompt
+  prompt_name: system_prompt_minimal
+
+  # Parallel tool execution helper (internal tool)
+  parallel_tool_calls: false
+
   # Conversation memory management:
   # Option 1: conversation_window - Fixed message count (legacy, default)
   # Option 2: context_budget - Token-based budget (recommended for variable-length outputs)

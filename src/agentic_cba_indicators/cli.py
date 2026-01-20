@@ -30,7 +30,7 @@ from agentic_cba_indicators.config import (
     load_config,
     print_provider_info,
 )
-from agentic_cba_indicators.logging_config import set_correlation_id
+from agentic_cba_indicators.logging_config import set_correlation_id, setup_logging
 from agentic_cba_indicators.memory import (
     TokenBudgetConversationManager,
     estimate_tokens_heuristic,
@@ -94,9 +94,13 @@ def create_agent_from_config(
 
     # Select tool set (includes internal help tools)
     tools = FULL_TOOLS if agent_config.tool_set == "full" else REDUCED_TOOLS
+    if not agent_config.parallel_tool_calls:
+        tools = tuple(
+            t for t in tools if getattr(t, "__name__", "") != "run_tools_parallel"
+        )
 
     # Build system prompt and estimate reserved budget
-    system_prompt = get_system_prompt()
+    system_prompt = get_system_prompt(agent_config.prompt_name)
     system_prompt_budget = _estimate_system_prompt_budget(system_prompt, tools)
 
     # Configure conversation memory
@@ -247,6 +251,8 @@ def main() -> None:
     import argparse
     import sys
     import uuid
+
+    setup_logging()
 
     # Set up argument parser
     parser = argparse.ArgumentParser(

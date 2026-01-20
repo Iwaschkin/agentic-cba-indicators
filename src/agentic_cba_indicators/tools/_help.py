@@ -78,7 +78,10 @@ _TOOL_CATEGORIES: dict[str, tuple[str, list[str]]] = {
             "export_indicator",
         ],
     ),
-    "help": ("Internal Help", ["list_tools", "describe_tool", "search_tools"]),
+    "help": (
+        "Internal Help",
+        ["list_tools", "describe_tool", "search_tools", "run_tools_parallel"],
+    ),
 }
 
 
@@ -125,7 +128,7 @@ def _categorize_tool(name: str) -> str:
 def _get_tools_from_context(
     tool_context: ToolContext | None,
 ) -> list[Callable[..., str]]:
-    """Get tools from ToolContext agent or fall back to module registry.
+    """Get tools from module registry or fall back to ToolContext.
 
     This inspects the ToolContext-provided agent for either `tool_registry`
     (preferred) or `tools`. If neither is available, it falls back to the
@@ -140,7 +143,11 @@ def _get_tools_from_context(
     Returns:
         List of tool functions from agent context or module registry
     """
-    # Try to get tools from the agent's context first
+    # Prefer module-level registry for stability
+    if _active_tools:
+        return _active_tools
+
+    # Fall back to tool context if registry not available
     if tool_context is not None:
         try:
             agent = tool_context.agent
@@ -150,14 +157,12 @@ def _get_tools_from_context(
             if hasattr(agent, "tools") and agent.tools:
                 return list(agent.tools)
         except (AttributeError, TypeError) as e:
-            # Fall back to module registry if context access fails
             logger.debug(
                 "Tool context access failed, falling back to module registry: %s: %s",
                 type(e).__name__,
                 e,
             )
 
-    # Fall back to module-level registry
     return _active_tools
 
 

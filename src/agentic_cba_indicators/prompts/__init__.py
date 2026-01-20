@@ -7,6 +7,7 @@ Loads system prompts from bundled package resources.
 from __future__ import annotations
 
 import importlib.resources
+import os
 from functools import lru_cache
 
 
@@ -32,14 +33,22 @@ def load_prompt(name: str) -> str:
         raise FileNotFoundError(f"Prompt file not found: {resource_name}") from None
 
 
-def get_system_prompt() -> str:
+def get_system_prompt(prompt_name: str | None = None) -> str:
     """
     Load the default system prompt.
+
+    Args:
+        prompt_name: Optional prompt name override (without .md extension).
+            If not provided, uses AGENTIC_CBA_PROMPT environment variable,
+            falling back to "system_prompt_minimal".
 
     Returns:
         The system prompt content
     """
-    return load_prompt("system_prompt_minimal")
+    resolved_name = prompt_name or os.environ.get(
+        "AGENTIC_CBA_PROMPT", "system_prompt_minimal"
+    )
+    return load_prompt(resolved_name)
 
 
 def clear_prompt_cache() -> None:

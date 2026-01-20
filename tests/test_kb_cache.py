@@ -89,3 +89,26 @@ def test_search_methods_cache_hit(monkeypatch):
     assert result1 == result2
     assert calls["embed"] == 1
     assert calls["query"] == 1
+
+
+def test_search_indicators_rerank_changes_order(monkeypatch):
+    kb.reset_kb_query_cache()
+
+    class DummyCollection:
+        def count(self) -> int:
+            return 1
+
+        def query(self, **kwargs: Any):
+            return {
+                "documents": [["soil carbon", "biodiversity"]],
+                "metadatas": [[{"id": 1}, {"id": 2}]],
+                "distances": [[0.6, 0.1]],
+            }
+
+    monkeypatch.setattr(kb, "_get_collection", lambda name: DummyCollection())
+    monkeypatch.setattr(kb, "_get_embedding", lambda _: [0.0])
+    monkeypatch.setattr(kb, "_RERANK_LEXICAL_WEIGHT", 1.0)
+
+    result = kb.search_indicators("soil", n_results=2, rerank=True)
+
+    assert result.find("soil carbon") < result.find("biodiversity")

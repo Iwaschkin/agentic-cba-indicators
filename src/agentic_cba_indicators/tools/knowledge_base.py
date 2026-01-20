@@ -17,6 +17,7 @@ import os
 import re
 import threading
 import time
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 import chromadb
@@ -84,9 +85,100 @@ _INDICATOR_MATCH_THRESHOLD = 0.7
 # Cosine similarity below this threshold indicates weak semantic match
 _DEFAULT_SIMILARITY_THRESHOLD = 0.3
 
+# Reranking configuration
+_RERANK_LEXICAL_WEIGHT = float(os.environ.get("KB_RERANK_LEXICAL_WEIGHT", "0.2"))
+
+# Knowledge freshness configuration (disabled if not set)
+_KB_FRESHNESS_TTL_DAYS: float | None
+_kb_freshness_env = os.environ.get("KB_FRESHNESS_TTL_DAYS")
+try:
+    _KB_FRESHNESS_TTL_DAYS = float(_kb_freshness_env) if _kb_freshness_env else None
+except ValueError:
+    _KB_FRESHNESS_TTL_DAYS = None
+
 # Patterns for detecting exact-match queries (indicator IDs, principle codes)
 _INDICATOR_ID_PATTERN = re.compile(r"^(?:indicator\s*)?(\d{1,3})$", re.IGNORECASE)
 _PRINCIPLE_CODE_PATTERN = re.compile(r"^(\d\.\d)$")
+
+_TOKEN_PATTERN = re.compile(r"[a-z0-9]+", re.IGNORECASE)
+
+
+def _tokenize(text: str) -> set[str]:
+    return set(_TOKEN_PATTERN.findall(text.lower()))
+
+
+def _lexical_score(query: str, text: str) -> float:
+    """Simple lexical overlap score (0.0-1.0)."""
+    query_tokens = _tokenize(query)
+    if not query_tokens:
+        return 0.0
+    text_tokens = _tokenize(text)
+    if not text_tokens:
+        return 0.0
+    overlap = query_tokens.intersection(text_tokens)
+    return len(overlap) / len(query_tokens)
+
+
+def _rerank_results(
+    query: str,
+    docs: list[str],
+    metas: list[Any],
+    dists: list[float],
+) -> tuple[list[str], list[Any], list[float]]:
+    """Rerank results by combining embedding similarity and lexical overlap."""
+    if not docs or not dists:
+        return docs, metas, dists
+
+    weight = max(0.0, min(1.0, _RERANK_LEXICAL_WEIGHT))
+    reranked = []
+    for doc, meta, dist in zip(docs, metas, dists, strict=False):
+        similarity = max(0.0, 1 - float(dist))
+        lexical = _lexical_score(query, doc)
+        combined = (1 - weight) * similarity + weight * lexical
+        reranked.append((combined, doc, meta, dist))
+
+    reranked.sort(key=lambda item: item[0], reverse=True)
+    docs_out = [item[1] for item in reranked]
+    metas_out = [item[2] for item in reranked]
+    dists_out = [item[3] for item in reranked]
+    return docs_out, metas_out, dists_out
+
+
+def _get_kb_ingestion_timestamp(client: ClientAPI) -> str | None:
+    try:
+        indicators_coll = client.get_collection("indicators")
+        sample = indicators_coll.get(limit=1, include=["metadatas"])
+        metadatas = sample.get("metadatas") if sample else None
+        if metadatas and metadatas[0]:
+            meta = cast("dict[str, Any]", metadatas[0])
+            return cast("str | None", meta.get("ingestion_timestamp"))
+    except Exception:
+        return None
+    return None
+
+
+def _format_kb_staleness(ingestion_ts: str | None) -> str | None:
+    if not ingestion_ts or _KB_FRESHNESS_TTL_DAYS is None:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(ingestion_ts)
+    except (ValueError, TypeError):
+        return None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    age_seconds = (datetime.now(UTC) - dt).total_seconds()
+    ttl_seconds = _KB_FRESHNESS_TTL_DAYS * 86400
+    if age_seconds <= ttl_seconds:
+        return None
+
+    age_days = age_seconds / 86400
+    return (
+        "⚠️ Knowledge base appears stale: "
+        f"{age_days:.1f} days old (TTL {_KB_FRESHNESS_TTL_DAYS:.1f} days)."
+    )
 
 
 def _extract_exact_match_term(query: str) -> str | None:
@@ -289,7 +381,7 @@ def _get_collection(name: str) -> chromadb.Collection:
 
 @tool
 def search_indicators(
-    query: str, n_results: int = 5, min_similarity: float = 0.3
+    query: str, n_results: int = 5, min_similarity: float = 0.3, rerank: bool = False
 ) -> str:
     """
     Search the CBA ME Indicators knowledge base for relevant indicators.
@@ -306,6 +398,7 @@ def search_indicators(
         query: Natural language search query describing what you're looking for
         n_results: Number of results to return (default 5, max 20)
         min_similarity: Minimum similarity threshold (0.0-1.0, default 0.3)
+        rerank: If True, apply lexical reranking on top of embedding similarity
 
     Returns:
         Matching indicators with their components, classes, units, and coverage
@@ -313,7 +406,7 @@ def search_indicators(
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
     min_similarity = max(0.0, min(1.0, min_similarity))
 
-    cache_key = ("search_indicators", query, n_results, min_similarity)
+    cache_key = ("search_indicators", query, n_results, min_similarity, rerank)
     if cached := _get_cached_kb_result(cache_key):
         return cached
 
@@ -355,6 +448,9 @@ def search_indicators(
             docs = (results.get("documents") or [[]])[0]
             metas = (results.get("metadatas") or [[]])[0]
             dists = (results.get("distances") or [[]])[0]
+
+        if rerank and not exact_term:
+            docs, metas, dists = _rerank_results(query, docs, metas, dists)
 
         if not docs:
             return "No matching indicators found."
@@ -401,7 +497,11 @@ def search_indicators(
 
 @tool
 def search_methods(
-    query: str, n_results: int = 5, min_similarity: float = 0.3, oa_only: bool = False
+    query: str,
+    n_results: int = 5,
+    min_similarity: float = 0.3,
+    oa_only: bool = False,
+    rerank: bool = False,
 ) -> str:
     """
     Search for measurement methods in the CBA ME knowledge base.
@@ -416,6 +516,7 @@ def search_methods(
         n_results: Number of results to return (default 5, max 20)
         min_similarity: Minimum similarity threshold (0.0-1.0, default 0.3)
         oa_only: If True, only return indicators with Open Access citations
+        rerank: If True, apply lexical reranking on top of embedding similarity
 
     Returns:
         Matching methods with evaluation criteria and citations
@@ -423,7 +524,7 @@ def search_methods(
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
     min_similarity = max(0.0, min(1.0, min_similarity))
 
-    cache_key = ("search_methods", query, n_results, min_similarity, oa_only)
+    cache_key = ("search_methods", query, n_results, min_similarity, oa_only, rerank)
     if cached := _get_cached_kb_result(cache_key):
         return cached
 
@@ -446,22 +547,25 @@ def search_methods(
 
         results = collection.query(**query_kwargs)
 
-        docs = results.get("documents")
-        metas = results.get("metadatas")
-        dists = results.get("distances")
+        docs = results.get("documents") or [[]]
+        metas = results.get("metadatas") or [[]]
+        dists = results.get("distances") or [[]]
 
         if not docs or not docs[0]:
             return "No matching methods found."
 
+        if rerank:
+            docs[0], metas[0], dists[0] = _rerank_results(
+                query,
+                docs[0],
+                metas[0] if metas else [],
+                dists[0] if dists else [],
+            )
+
         output_lines: list[str] = []
         result_count = 0
 
-        for doc, meta, dist in zip(
-            docs[0],
-            metas[0] if metas else [],
-            dists[0] if dists else [],
-            strict=False,
-        ):
+        for doc, meta, dist in zip(docs[0], metas[0], dists[0], strict=False):
             meta = cast("dict[str, Any]", meta)
             dist = cast("float", dist)
             # Cosine distance: 0 = identical, 2 = opposite. Similarity = 1 - distance.
@@ -611,6 +715,11 @@ def list_knowledge_base_stats() -> str:
             output.append(f"Collection: {coll_info.name}")
             output.append(f"  Documents: {collection.count()}")
 
+        ingestion_ts = _get_kb_ingestion_timestamp(client)
+        if warning := _format_kb_staleness(ingestion_ts):
+            output.append("")
+            output.append(warning)
+
         # Open Access statistics from methods collection
         try:
             methods_coll = client.get_collection("methods")
@@ -693,8 +802,6 @@ def get_knowledge_version() -> str:
                 # Parse and format timestamp if available
                 if ingestion_ts and ingestion_ts != "unknown":
                     try:
-                        from datetime import datetime
-
                         # ISO format: 2025-01-18T12:34:56.789012+00:00
                         dt = datetime.fromisoformat(ingestion_ts)
                         output.append(
@@ -702,6 +809,9 @@ def get_knowledge_version() -> str:
                         )
                     except (ValueError, TypeError):
                         pass
+
+                    if warning := _format_kb_staleness(ingestion_ts):
+                        output.append(warning)
             else:
                 output.append("Schema Version: unknown (no metadata)")
                 output.append("Ingestion Timestamp: unknown")
@@ -723,7 +833,9 @@ def get_knowledge_version() -> str:
 
 
 @tool
-def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3) -> str:
+def search_usecases(
+    query: str, n_results: int = 5, min_similarity: float = 0.3, rerank: bool = False
+) -> str:
     """
     Search for example use case projects in the knowledge base.
 
@@ -736,6 +848,7 @@ def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3)
         query: Search query about projects, commodities, or outcomes
         n_results: Number of results to return (default 5, max 20)
         min_similarity: Minimum similarity threshold (0.0-1.0, default 0.3)
+        rerank: If True, apply lexical reranking on top of embedding similarity
 
     Returns:
         Matching use case projects with their outcomes and selected indicators
@@ -743,7 +856,7 @@ def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3)
     n_results = min(max(1, n_results), _MAX_SEARCH_RESULTS_DEFAULT)
     min_similarity = max(0.0, min(1.0, min_similarity))
 
-    cache_key = ("search_usecases", query, n_results, min_similarity)
+    cache_key = ("search_usecases", query, n_results, min_similarity, rerank)
     if cached := _get_cached_kb_result(cache_key):
         return cached
 
@@ -763,22 +876,25 @@ def search_usecases(query: str, n_results: int = 5, min_similarity: float = 0.3)
             include=["documents", "metadatas", "distances"],
         )
 
-        docs = results.get("documents")
-        metas = results.get("metadatas")
-        dists = results.get("distances")
+        docs = results.get("documents") or [[]]
+        metas = results.get("metadatas") or [[]]
+        dists = results.get("distances") or [[]]
 
         if not docs or not docs[0]:
             return "No matching use cases found."
 
+        if rerank:
+            docs[0], metas[0], dists[0] = _rerank_results(
+                query,
+                docs[0],
+                metas[0],
+                dists[0],
+            )
+
         output_lines: list[str] = []
         result_count = 0
 
-        for doc, meta, dist in zip(
-            docs[0],
-            metas[0] if metas else [],
-            dists[0] if dists else [],
-            strict=False,
-        ):
+        for doc, meta, dist in zip(docs[0], metas[0], dists[0], strict=False):
             meta = cast("dict[str, Any]", meta)
             dist = cast("float", dist)
             # Cosine distance: 0 = identical, 2 = opposite. Similarity = 1 - distance.

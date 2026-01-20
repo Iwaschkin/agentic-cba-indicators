@@ -10,6 +10,7 @@ Supports both local Ollama and Ollama Cloud with TLS validation.
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import time
@@ -254,6 +255,48 @@ def get_embeddings_batch(
     ]
 
     headers = _get_ollama_headers()
+
+    def _fallback_to_individual(
+        client: httpx.Client,
+    ) -> list[list[float] | None]:
+        logger.debug(
+            "Falling back to individual embedding for %d texts",
+            len(truncated_texts),
+        )
+        embeddings: list[list[float] | None] = []
+        for i, text in enumerate(truncated_texts):
+            try:
+                single_resp = client.post(
+                    f"{OLLAMA_HOST}/api/embed",
+                    json={"model": EMBEDDING_MODEL, "input": text},
+                    headers=headers,
+                )
+                single_resp.raise_for_status()
+                try:
+                    payload = single_resp.json()
+                except json.JSONDecodeError as e:
+                    raise RuntimeError("Embedding response invalid JSON") from e
+                embeddings.append(payload["embeddings"][0])
+            except (
+                httpx.HTTPError,
+                KeyError,
+                IndexError,
+                TypeError,
+                RuntimeError,
+            ) as e:
+                if strict:
+                    raise RuntimeError(
+                        f"Embedding failed for doc {i} (len={len(text)})"
+                    ) from e
+                logger.debug(
+                    "Individual embedding failed for doc %d (len=%d): %s",
+                    i,
+                    len(text),
+                    e,
+                )
+                embeddings.append(None)
+        return embeddings
+
     with httpx.Client(timeout=_BATCH_EMBEDDING_TIMEOUT) as client:
         response = client.post(
             f"{OLLAMA_HOST}/api/embed",
@@ -267,32 +310,18 @@ def get_embeddings_batch(
                 response.status_code,
                 len(truncated_texts),
             )
-            embeddings: list[list[float] | None] = []
-            for i, text in enumerate(truncated_texts):
-                try:
-                    single_resp = client.post(
-                        f"{OLLAMA_HOST}/api/embed",
-                        json={"model": EMBEDDING_MODEL, "input": text},
-                        headers=headers,
-                    )
-                    single_resp.raise_for_status()
-                    payload = single_resp.json()
-                    embeddings.append(payload["embeddings"][0])
-                except httpx.HTTPError as e:
-                    if strict:
-                        raise RuntimeError(
-                            f"Embedding failed for doc {i} (len={len(text)})"
-                        ) from e
-                    logger.debug(
-                        "Individual embedding failed for doc %d (len=%d): %s",
-                        i,
-                        len(text),
-                        e,
-                    )
-                    embeddings.append(None)
-            return embeddings
+            return _fallback_to_individual(client)
 
-        payload = response.json()
+        try:
+            payload = response.json()
+        except json.JSONDecodeError as e:
+            if strict:
+                raise RuntimeError("Embedding response invalid JSON") from e
+            logger.debug(
+                "Batch embedding returned invalid JSON, falling back to individual embedding"
+            )
+            return _fallback_to_individual(client)
+
         batch_embeddings = payload.get("embeddings")
         if not isinstance(batch_embeddings, list) or len(batch_embeddings) != len(
             truncated_texts

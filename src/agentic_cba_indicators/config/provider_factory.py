@@ -70,6 +70,7 @@ class ProviderConfig:
     api_key: str | None = None  # Anthropic, OpenAI, Gemini
     base_url: str | None = None  # OpenAI (custom endpoints)
     region_name: str | None = None  # Bedrock
+    top_p: float | None = None  # Gemini (sampling)
 
 
 @dataclass
@@ -79,6 +80,8 @@ class AgentConfig:
     tool_set: str = "reduced"  # "reduced" or "full"
     conversation_window: int = 5  # Legacy: message count for SlidingWindow
     context_budget: int | None = None  # Token budget (None = use conversation_window)
+    prompt_name: str = "system_prompt_minimal"  # Prompt file name without extension
+    parallel_tool_calls: bool = False  # Enable parallel tool execution helper
 
 
 def _expand_env_vars(value: Any) -> Any:
@@ -191,6 +194,9 @@ def _validate_config(config: dict[str, Any]) -> None:
         model_id = provider_cfg.get("model_id")
         if not isinstance(model_id, str) or not model_id:
             raise ValueError(f"Provider '{name}' must define a non-empty 'model_id'")
+        top_p = provider_cfg.get("top_p")
+        if top_p is not None and not isinstance(top_p, (int, float)):
+            raise ValueError(f"Provider '{name}' top_p must be a number if set")
 
     agent_cfg = config.get("agent", {})
     if agent_cfg is not None:
@@ -210,6 +216,14 @@ def _validate_config(config: dict[str, Any]) -> None:
             not isinstance(context_budget, int) or context_budget <= 0
         ):
             raise ValueError("Agent 'context_budget' must be a positive integer if set")
+
+        prompt_name = agent_cfg.get("prompt_name", "system_prompt_minimal")
+        if not isinstance(prompt_name, str) or not prompt_name:
+            raise ValueError("Agent 'prompt_name' must be a non-empty string")
+
+        parallel_tool_calls = agent_cfg.get("parallel_tool_calls", False)
+        if not isinstance(parallel_tool_calls, bool):
+            raise ValueError("Agent 'parallel_tool_calls' must be a boolean")
 
 
 def get_provider_config(config: dict[str, Any]) -> ProviderConfig:
@@ -243,6 +257,7 @@ def get_provider_config(config: dict[str, Any]) -> ProviderConfig:
         api_key=provider_cfg.get("api_key"),
         base_url=provider_cfg.get("base_url"),
         region_name=provider_cfg.get("region_name"),
+        top_p=provider_cfg.get("top_p"),
     )
 
 
@@ -253,6 +268,8 @@ def get_agent_config(config: dict[str, Any]) -> AgentConfig:
         tool_set=agent_cfg.get("tool_set", "reduced"),
         conversation_window=agent_cfg.get("conversation_window", 5),
         context_budget=agent_cfg.get("context_budget"),
+        prompt_name=agent_cfg.get("prompt_name", "system_prompt_minimal"),
+        parallel_tool_calls=agent_cfg.get("parallel_tool_calls", False),
     )
 
 
@@ -406,6 +423,8 @@ def create_model(provider_config: ProviderConfig):
         params: dict[str, Any] = {"temperature": provider_config.temperature}
         if provider_config.max_tokens:
             params["max_output_tokens"] = provider_config.max_tokens
+        if provider_config.top_p is not None:
+            params["top_p"] = provider_config.top_p
 
         try:
             return GeminiModel(

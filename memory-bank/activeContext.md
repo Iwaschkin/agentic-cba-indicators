@@ -1,11 +1,24 @@
 # Active Context
 
 ## Current Focus
-**CODE REVIEW v4 REMEDIATION - COMPLETE** ✅
+**CODE REVIEW v5 REMEDIATION - COMPLETE** ✅
 
-Step 4 remediation plan (TASK117-TASK126) completed.
+Phases 1-3 remediation plan (TASK131-TASK137) completed.
 
-## Phase Status (2026-01-19)
+## Phase Status (2026-01-20)
+
+### Phase 1 - Config Fidelity ✅
+- **TASK131**: UI prompt selection respects config ✅
+- **TASK132**: Gemini top_p propagation ✅
+
+### Phase 2 - Embedding/Timeout Resilience ✅
+- **TASK133**: Batch embedding JSON hardening ✅
+- **TASK134**: Timeout metadata flags ✅
+- **TASK135**: Timeout executor reset mitigation ✅
+
+### Phase 3 - Observability Wiring ✅
+- **TASK136**: Logging setup at entry points ✅
+- **TASK137**: Logging docstring alignment ✅
 
 ### Phase 1 - Quick Wins ✅
 - **TASK117**: Debug logging in tool context discovery ✅
@@ -30,15 +43,13 @@ Step 4 remediation plan (TASK117-TASK126) completed.
 - **TASK126**: known-limitations update ✅
 
 ## Current Notes
-- Added system prompt budget estimation in `cli.py` (prompt + tools).
-- Added timeout decorator and tests for API tools.
-- Added help tool category keyword collision test.
-- Updated known-limitations with new v4 items and mitigations.
-- Added KB query caching for search tools with TTLCache and tests.
-- Added error classification with categories in `format_error()` plus tests.
-- Added correlation IDs for CLI requests, logging, and audit trail + tests.
-- Documented ToolContext policy in CONTRIBUTING (internal tools only).
+- UI now respects configured `prompt_name` and includes test coverage.
+- Gemini `top_p` config is validated and forwarded to model params.
+- Batch embeddings handle invalid JSON and fallback to individual calls.
+- Timeout decorator metadata fixed; executor reset mitigation added.
+- CLI/UI now call `setup_logging()` at entry points.
+- logging_config docstring aligned with signature.
 
 ## Next Steps
 - Run full test suite if desired.
-- Code review v2 action plan items (TASK127-TASK130) completed.
+- Monitor timeout mitigation effectiveness under load.
