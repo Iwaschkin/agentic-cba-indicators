@@ -9,6 +9,12 @@
   - PDF upload for context extraction
   - Chat interface with history
   - Report detection and markdown export
+- **MCP Server** (NEW)
+  - Entry point: `agentic-cba-mcp`
+  - FastMCP server exposing all 58 tools via stdio transport
+  - Help tools removed (MCP provides native tool discovery)
+  - `FULL_TOOL_NAMES` and `REDUCED_TOOL_NAMES` constants for filtering
+  - 12 tests in test_mcp_server.py
 - Knowledge base ingestion scripts (with embedding retry/validation)
 - **Citation normalization in KB** (85.9% DOI extraction rate)
   - DOI parsing and validation per DOI Handbook (ISO 26324)
@@ -44,7 +50,7 @@
   - OA enrichment (8 tests)
   - HTTP caching (18 tests)
   - Tool output truncation (9 tests)
-- **Total: 435 tests** after Phase 6 completion
+- **Total: 453 tests** after MCP server migration
 - Security hardening:
   - Error message sanitization (no URL params/credentials leaked)
   - TLS enforcement for Ollama connections

@@ -1,53 +1,41 @@
 # Active Context
 
 ## Current Focus
-**CODE REVIEW v5 REMEDIATION - COMPLETE** ✅
+**MCP SERVER MIGRATION - COMPLETE** ✅
 
-Phases 1-3 remediation plan (TASK131-TASK137) completed.
+MCP (Model Context Protocol) server module created. Help tools removed. Direct tool-passing retained.
 
 ## Phase Status (2026-01-20)
 
-### Phase 1 - Config Fidelity ✅
-- **TASK131**: UI prompt selection respects config ✅
-- **TASK132**: Gemini top_p propagation ✅
+### MCP Server Migration (TASK138-TASK152)
 
-### Phase 2 - Embedding/Timeout Resilience ✅
-- **TASK133**: Batch embedding JSON hardening ✅
-- **TASK134**: Timeout metadata flags ✅
-- **TASK135**: Timeout executor reset mitigation ✅
+**Completed:**
+- ✅ Phase 1: MCP Server Foundation
+  - Created `mcp_server.py` with FastMCP server exposing all 58 tools
+  - Added `agentic-cba-mcp` entry point in pyproject.toml
+- ✅ Phase 2: Help Tools Removal
+  - Deleted `_help.py` module (MCP provides native discovery)
+  - Cleaned imports from `tools/__init__.py`, `cli.py`, `ui.py`
+  - Fixed `_parallel.py` to copy `_get_tools_from_context()` locally
+- ✅ Phase 3: Tool Constants & Prompt
+  - Added `FULL_TOOL_NAMES` and `REDUCED_TOOL_NAMES` constants
+  - Simplified system prompt (removed tool discovery instructions)
+- ✅ Phase 4: MCPClient Migration - **DEFERRED**
+  - Decision: Keep direct tool-passing (simpler, no subprocess overhead)
+  - MCP server available for external tools via `agentic-cba-mcp` command
+- ✅ Phase 5: Test Updates
+  - Created `test_mcp_server.py` with 12 tests
+  - Fixed `test_parallel_tools.py` mock context
+- ✅ Phase 6: Final Validation
+  - All 453 tests pass
+  - ruff lint: All checks passed
+  - pyright: 0 errors in new MCP files (pre-existing errors in other files)
 
-### Phase 3 - Observability Wiring ✅
-- **TASK136**: Logging setup at entry points ✅
-- **TASK137**: Logging docstring alignment ✅
+**Tool Counts:**
+- FULL: 58 tools (was 62, removed 4 help tools)
+- REDUCED: 20 tools (was 24, removed 4 help tools)
 
-### Phase 1 - Quick Wins ✅
-- **TASK117**: Debug logging in tool context discovery ✅
-- **TASK118**: CONTRIBUTING.md tool docs ✅
-- **TASK119**: __version__ constant ✅
-
-### Phase 2 - Thread Safety ✅
-- **TASK120**: Thread-safe geocoding cache ✅ (TTLCache + lock)
-
-### Phase 3 - Token Estimation ✅
-- **TASK121**: tiktoken evaluation documented ✅
-- **TASK122**: system prompt budget wired + tested ✅
-
-### Phase 4 - Resilience ✅
-- **TASK123**: tool timeout decorator ✅
-
-### Phase 5 - Help Tool Refinement ✅
-- **TASK124**: keyword overlap guard test ✅
-- **TASK125**: tool context audit ✅
-
-### Phase 6 - Documentation ✅
-- **TASK126**: known-limitations update ✅
-
-## Current Notes
-- UI now respects configured `prompt_name` and includes test coverage.
-- Gemini `top_p` config is validated and forwarded to model params.
-- Batch embeddings handle invalid JSON and fallback to individual calls.
-- Timeout decorator metadata fixed; executor reset mitigation added.
-- CLI/UI now call `setup_logging()` at entry points.
+### Previous: CODE REVIEW v5 REMEDIATION ✅
 - logging_config docstring aligned with signature.
 
 ## Next Steps

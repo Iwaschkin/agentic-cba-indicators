@@ -10,14 +10,46 @@ from strands import ToolContext, tool
 
 from agentic_cba_indicators.logging_config import get_logger
 
-from ._help import _get_tools_from_context
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 logger = get_logger(__name__)
 
 _DEFAULT_MAX_WORKERS = int(os.environ.get("TOOL_PARALLEL_MAX_WORKERS", "4"))
+
+
+def _get_tools_from_context(
+    tool_context: ToolContext | None,
+) -> list[Callable[..., str]]:
+    """Get tools from ToolContext.
+
+    Inspects the ToolContext-provided agent for either `tool_registry`
+    (preferred) or `tools`.
+
+    Args:
+        tool_context: Optional ToolContext provided by Strands runtime
+
+    Returns:
+        List of tool functions from agent context
+    """
+    if tool_context is None:
+        return []
+
+    try:
+        agent = tool_context.agent
+        if hasattr(agent, "tool_registry") and agent.tool_registry:
+            # tool_registry is a dict mapping tool names to tool handlers
+            return list(agent.tool_registry.values())
+        if hasattr(agent, "tools") and agent.tools:
+            return list(agent.tools)
+    except (AttributeError, TypeError) as e:
+        logger.debug(
+            "Tool context access failed: %s: %s",
+            type(e).__name__,
+            e,
+        )
+
+    return []
 
 
 def _resolve_tool_map(

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from agentic_cba_indicators.tools._help import set_active_tools
 from agentic_cba_indicators.tools._parallel import run_tools_parallel
 
 
@@ -15,11 +14,10 @@ def test_run_tools_parallel_executes_in_order() -> None:
     def tool_b(text: str) -> str:
         return f"B:{text}"
 
-    set_active_tools([tool_a, tool_b])
-
+    # Mock tool context with tools in agent.tools
     mock_context = MagicMock()
     mock_context.agent.tool_registry = None
-    mock_context.agent.tools = None
+    mock_context.agent.tools = [tool_a, tool_b]
 
     result = run_tools_parallel(
         [

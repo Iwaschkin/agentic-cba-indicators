@@ -51,6 +51,7 @@ all-providers = [
 [project.scripts]
 agentic-cba = "agentic_cba_indicators.cli:main"
 agentic-cba-ui = "agentic_cba_indicators.ui:main"
+agentic-cba-mcp = "agentic_cba_indicators.mcp_server:run_server"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agentic_cba_indicators"]

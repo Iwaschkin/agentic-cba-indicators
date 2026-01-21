@@ -41,7 +41,6 @@ from agentic_cba_indicators.security import (
     sanitize_user_input,
 )
 from agentic_cba_indicators.tools import FULL_TOOLS, REDUCED_TOOLS
-from agentic_cba_indicators.tools._help import set_active_tools
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -115,10 +114,6 @@ def create_agent_from_config(
         conversation_manager = SlidingWindowConversationManager(
             window_size=agent_config.conversation_window,
         )
-
-    # Register active tools for internal help system
-    # This allows list_tools() and search_tools() to reflect the actual tool set
-    set_active_tools(tools)
 
     # Create agent with selected tools
     # Convert tuple to list since Agent expects list type

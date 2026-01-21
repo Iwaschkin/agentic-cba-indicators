@@ -14,13 +14,6 @@ if TYPE_CHECKING:
 from agentic_cba_indicators.audit import log_tool_invocation
 from agentic_cba_indicators.observability import instrument_tool
 
-# Internal help tools (for agent self-discovery)
-# These are included in tool sets for agent access but hidden from users
-from ._help import describe_tool as describe_tool
-from ._help import list_tools as list_tools
-from ._help import list_tools_by_category as list_tools_by_category
-from ._help import search_tools as search_tools
-from ._help import set_active_tools as set_active_tools
 from ._http import classify_error
 from ._parallel import run_tools_parallel as run_tools_parallel
 from ._timeout import timeout
@@ -148,10 +141,35 @@ def _wrap_with_audit(func: Callable[..., str]) -> Callable[..., str]:
 
 
 def _wrap_tool(tool_func: Callable[..., str]) -> Callable[..., str]:
-    """Apply timeout, audit logging, and metrics to a tool function."""
+    """Apply timeout, audit logging, and metrics to a tool function.
+
+    For Strands @tool decorated functions (DecoratedFunctionTool), we wrap the
+    inner _tool_func while preserving the AgentTool interface. This ensures the
+    Agent registry recognizes the tool.
+
+    For plain functions, we apply standard wrapping.
+    """
     if getattr(tool_func, "__agentic_tool_wrapped__", False):
         return tool_func
 
+    # Check if this is a Strands DecoratedFunctionTool
+    # These have a _tool_func attribute that holds the actual callable
+    if hasattr(tool_func, "_tool_func"):
+        # Wrap the inner function, not the DecoratedFunctionTool
+        inner_func = tool_func._tool_func  # type: ignore[union-attr]
+
+        if not getattr(inner_func, "__tool_timeout_wrapped__", False):
+            inner_func = timeout(_DEFAULT_TOOL_TIMEOUT_SECONDS)(inner_func)
+
+        inner_func = _wrap_with_audit(inner_func)
+        inner_func = instrument_tool(inner_func)
+
+        # Replace the inner function with the wrapped version
+        tool_func._tool_func = inner_func  # type: ignore[union-attr]
+        tool_func.__agentic_tool_wrapped__ = True  # type: ignore[attr-defined]
+        return tool_func
+
+    # For non-Strands tools (plain functions), use standard wrapping
     wrapped = tool_func
 
     if not getattr(wrapped, "__tool_timeout_wrapped__", False):
@@ -172,11 +190,12 @@ def _prepare_toolset(
 
 __all__ = [
     "FULL_TOOLS",
+    "FULL_TOOL_NAMES",
     "REDUCED_TOOLS",
+    "REDUCED_TOOL_NAMES",
     "compare_commodity_producers",
     "compare_gender_gaps",
     "compare_indicators",
-    "describe_tool",
     "export_indicator_selection",
     "find_feasible_methods",
     "find_indicators_by_class",
@@ -222,8 +241,6 @@ __all__ = [
     "list_fas_commodities",
     "list_indicators_by_component",
     "list_knowledge_base_stats",
-    "list_tools",
-    "list_tools_by_category",
     "run_tools_parallel",
     "search_commodity_data",
     "search_fao_indicators",
@@ -233,19 +250,13 @@ __all__ = [
     "search_methods",
     "search_sdg_indicators",
     "search_species",
-    "search_tools",
     "search_usecases",
-    "set_active_tools",
 ]
 
 
-# Reduced tool set (23 tools) - good for most models
+# Reduced tool set (19 tools) - good for most models
 _REDUCED_TOOLS_RAW = (
-    # Internal Help (agent self-discovery)
-    list_tools,
-    list_tools_by_category,
-    search_tools,
-    describe_tool,
+    # Utility
     run_tools_parallel,
     # Weather
     get_current_weather,
@@ -275,13 +286,9 @@ _REDUCED_TOOLS_RAW = (
 )
 
 
-# Full tool set (61 tools) - for models with large context
+# Full tool set (57 tools) - for models with large context
 _FULL_TOOLS_RAW = (
-    # Internal Help (agent self-discovery)
-    list_tools,
-    list_tools_by_category,
-    search_tools,
-    describe_tool,
+    # Utility
     run_tools_parallel,
     # Weather & Climate
     get_current_weather,
@@ -357,3 +364,7 @@ _FULL_TOOLS_RAW = (
 
 REDUCED_TOOLS = _prepare_toolset(_REDUCED_TOOLS_RAW)
 FULL_TOOLS = _prepare_toolset(_FULL_TOOLS_RAW)
+
+# Tool name constants for MCPClient tool_filters
+REDUCED_TOOL_NAMES: list[str] = [t.__name__ for t in _REDUCED_TOOLS_RAW]
+FULL_TOOL_NAMES: list[str] = [t.__name__ for t in _FULL_TOOLS_RAW]

@@ -71,13 +71,16 @@ providers:
 # Agent Configuration
 # =============================================================================
 agent:
-  # Tool set to use: "reduced" (19 tools) or "full" (52 tools)
+  # Tool set to use: "reduced" (20 tools) or "full" (58 tools)
   # Use "reduced" for smaller models, "full" for larger cloud models
-  tool_set: reduced
+  tool_set: full
 
   # Prompt selection (file name without .md extension)
-  # Options: system_prompt_minimal (default), system_prompt
-  prompt_name: system_prompt_minimal
+  # Options:
+  #   - system_prompt_minimal: Concise prompt for general use
+  #   - system_prompt: Full reference guide with tool documentation
+  #   - system_prompt_guided: Conversational intake for project leaders (recommended for indicator selection)
+  prompt_name: system_prompt_guided
 
   # Parallel tool execution helper (internal tool)
   parallel_tool_calls: false

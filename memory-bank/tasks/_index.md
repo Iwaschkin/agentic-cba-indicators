@@ -5,9 +5,40 @@
 *No tasks currently in progress*
 
 ## Pending
+
 *No pending tasks*
 
 ## Completed
+
+### MCP Server Migration (TASK138-TASK152) - COMPLETE
+**Phase 1 - MCP Server Foundation:**
+- [TASK138] Create MCP server module - P0 ✅
+- [TASK139] Add MCP entry point - P0 ✅
+
+**Phase 2 - Help Tools Removal:**
+- [TASK140] Delete help tools module - P1 ✅
+- [TASK141] Clean help tool imports - P1 ✅
+- [TASK142] Remove CLI set_active_tools - P1 ✅
+- [TASK143] Remove UI set_active_tools - P1 ✅
+- [TASK144] Remove include_help_tools config - P2 ✅ (N/A - not in config)
+- [TASK145] Delete help tools tests - P1 ✅
+
+**Phase 3 - Tool Constants & Prompt:**
+- [TASK146] Add tool name constants - P1 ✅
+- [TASK147] Simplify system prompt - P1 ✅
+
+**Phase 4 - Client Migration: DEFERRED**
+- [TASK148] Refactor CLI to MCPClient - DEFERRED (direct tool-passing kept)
+- [TASK149] Refactor UI to MCPClient - DEFERRED (direct tool-passing kept)
+
+**Phase 5 - Test Updates:**
+- [TASK150] Create MCP server tests - P1 ✅
+- [TASK151] Update tool wrapping tests - P2 ✅ (N/A - wrapping unchanged)
+
+**Phase 6 - Validation:**
+- [TASK152] Final verification - P0 ✅
+
+**Summary:** MCP server created and exposed via `agentic-cba-mcp` entry point. Help tools removed (MCP provides native discovery). MCPClient migration deferred - direct tool-passing retained for simplicity. All 453 tests pass.
 
 ### Code Review v5 Remediation - Phase 1-3 (COMPLETE)
 - [TASK131] Fix UI prompt selection - P1 ✅
