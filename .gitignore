@@ -45,6 +45,21 @@ htmlcov/
 # Local data (don't commit kb_data to repo, use AGENTIC_CBA_DATA_DIR)
 kb_data/
 
+# Development memory and planning files
+memory-bank/
+
 # Environment
 .env
 .env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
