@@ -42,7 +42,7 @@ htmlcov/
 .ruff_cache/
 .mypy_cache/
 
-# Local data (don't commit kb_data to repo, use STRANDS_DATA_DIR)
+# Local data (don't commit kb_data to repo, use AGENTIC_CBA_DATA_DIR)
 kb_data/
 
 # Environment
