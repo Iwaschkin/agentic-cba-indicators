@@ -25,7 +25,7 @@ def test_gemini_top_p_forwarded(monkeypatch) -> None:
     provider_config = ProviderConfig(
         name="gemini",
         model_id="gemini-2.5-flash",
-        api_key="test-key",
+        api_key="FAKE_KEY_FOR_TESTING_ONLY",  # nosec B105
         top_p=0.9,
     )
 

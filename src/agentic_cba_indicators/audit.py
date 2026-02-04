@@ -6,7 +6,7 @@ Logs are written in JSON Lines format for easy parsing and analysis.
 
 Security:
     - Parameters are sanitized before logging (credentials redacted)
-    - Output paths are validated to prevent path traversal
+    - Output paths are validated to prevent path traversal (via paths._validate_path)
     - Result summaries are truncated to prevent log bloat
 
 Configuration:
@@ -39,7 +39,7 @@ import re
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path  # noqa: TC003  # Used at runtime in doctest
 from typing import Any
 
 from agentic_cba_indicators.logging_config import get_correlation_id, get_logger
@@ -339,17 +339,18 @@ def get_audit_logger() -> AuditLogger | None:
         # Check for environment variable
         log_path_str = os.environ.get(AUDIT_LOG_ENV_VAR)
 
-        if log_path_str:
-            log_path = Path(log_path_str)
-        else:
+        if not log_path_str:
             # Default: disabled unless explicitly configured
             _audit_logger_initialized = True
             logger.debug("Audit logging disabled (set %s to enable)", AUDIT_LOG_ENV_VAR)
             return None
 
         # Validate path (security: prevent path traversal)
+        # Import here to avoid circular imports
+        from agentic_cba_indicators.paths import _validate_path
+
         try:
-            log_path = log_path.resolve()
+            log_path = _validate_path(log_path_str, AUDIT_LOG_ENV_VAR)
             _audit_logger = AuditLogger(log_path)
             logger.info("Audit logging enabled: %s", log_path)
         except Exception as e:

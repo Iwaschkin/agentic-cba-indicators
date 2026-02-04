@@ -149,8 +149,13 @@ def get_kb_path() -> Path:
 
     Returns:
         Path to kb_data directory within the data directory
+
+    Note:
+        Security: get_data_dir() validates env var input via _validate_path().
+        The "kb_data" suffix is a hardcoded constant, not user input.
     """
-    kb_path = get_data_dir() / "kb_data"
+    # Security: base path is validated by get_data_dir(); suffix is constant
+    kb_path = get_data_dir() / "kb_data"  # nosec B108
     kb_path.mkdir(parents=True, exist_ok=True)
     return kb_path
 
