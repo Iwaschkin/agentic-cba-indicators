@@ -399,6 +399,9 @@ def create_agent_for_ui(
     system_prompt_budget = _estimate_system_prompt_budget(system_prompt, list(tools))
 
     # Use token-budget manager if context_budget is set, otherwise fall back to sliding window
+    conversation_manager: (
+        TokenBudgetConversationManager | SlidingWindowConversationManager
+    )
     if agent_config.context_budget is not None:
         conversation_manager = TokenBudgetConversationManager(
             max_tokens=agent_config.context_budget,

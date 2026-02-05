@@ -142,7 +142,7 @@ agent:
             )
 
             agent, _, _ = create_agent_from_config(config_path=config_path)
-            assert any(t.__name__ == "run_tools_parallel" for t in agent.tools)
+            assert any(t.__name__ == "run_tools_parallel" for t in agent.tools)  # type: ignore[attr-defined]
 
         def test_parallel_tool_excluded_when_disabled(self, monkeypatch, tmp_path):
             from agentic_cba_indicators.cli import create_agent_from_config
@@ -169,7 +169,7 @@ agent:
             )
 
             agent, _, _ = create_agent_from_config(config_path=config_path)
-            assert all(t.__name__ != "run_tools_parallel" for t in agent.tools)
+            assert all(t.__name__ != "run_tools_parallel" for t in agent.tools)  # type: ignore[attr-defined]
 
 
 # ============================================================================

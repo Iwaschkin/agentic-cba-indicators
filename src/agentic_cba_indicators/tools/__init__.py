@@ -366,5 +366,5 @@ REDUCED_TOOLS = _prepare_toolset(_REDUCED_TOOLS_RAW)
 FULL_TOOLS = _prepare_toolset(_FULL_TOOLS_RAW)
 
 # Tool name constants for MCPClient tool_filters
-REDUCED_TOOL_NAMES: list[str] = [t.__name__ for t in _REDUCED_TOOLS_RAW]
-FULL_TOOL_NAMES: list[str] = [t.__name__ for t in _FULL_TOOLS_RAW]
+REDUCED_TOOL_NAMES: list[str] = [t.__name__ for t in _REDUCED_TOOLS_RAW]  # type: ignore[attr-defined]
+FULL_TOOL_NAMES: list[str] = [t.__name__ for t in _FULL_TOOLS_RAW]  # type: ignore[attr-defined]

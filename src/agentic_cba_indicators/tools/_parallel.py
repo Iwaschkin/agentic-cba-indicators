@@ -95,19 +95,21 @@ def run_tools_parallel(
 
     max_workers = max(1, _DEFAULT_MAX_WORKERS)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = []
+        future_to_idx: dict[Any, int] = {}
         for idx, call in enumerate(calls):
             name = call.get("name", "")
             args = call.get("args", {}) or {}
-            futures.append(executor.submit(_invoke, idx, name, args))
+            future = executor.submit(_invoke, idx, name, args)
+            future_to_idx[future] = idx
 
-        for future in as_completed(futures):
+        for future in as_completed(future_to_idx):
+            future_idx = future_to_idx[future]
             try:
-                idx, result = future.result()
-                results[idx] = result
+                _, result = future.result()
+                results[future_idx] = result
             except Exception as exc:  # Best-effort aggregation
                 logger.warning("Parallel tool call failed: %s", exc)
-                results[idx] = f"Error executing tool: {exc}"
+                results[future_idx] = f"Error executing tool: {exc}"
 
     output_lines = ["=== Parallel Tool Results ===\n"]
     for idx, call in enumerate(calls):

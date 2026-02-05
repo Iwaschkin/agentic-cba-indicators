@@ -440,14 +440,14 @@ def upsert_usecase_docs(
     filtered_embeddings: list[list[float]] = []
     failed_ids: list[str] = []
 
-    for doc_id, doc, meta, embedding in zip(
+    for doc_id, doc_text, meta, embedding in zip(
         ids, documents, metadatas, embeddings, strict=False
     ):
         if embedding is None:
             failed_ids.append(doc_id)
             continue
         filtered_ids.append(doc_id)
-        filtered_docs.append(doc)
+        filtered_docs.append(doc_text)
         filtered_metas.append(meta)
         filtered_embeddings.append(embedding)
 

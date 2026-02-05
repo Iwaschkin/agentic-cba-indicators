@@ -186,6 +186,7 @@ def _gfw_get(
     should_close = client is None
     headers = _get_gfw_headers()
     client = client or create_client(timeout=GFW_TIMEOUT, headers=headers)
+    assert client is not None  # Guaranteed by line above
 
     url = f"{GFW_BASE_URL}{endpoint}"
     last_error: APIError | None = None
@@ -315,6 +316,7 @@ def _gfw_post(
     should_close = client is None
     headers = _get_gfw_headers()
     client = client or create_client(timeout=GFW_TIMEOUT, headers=headers)
+    assert client is not None  # Guaranteed by line above
 
     url = f"{GFW_BASE_URL}{endpoint}"
     last_error: APIError | None = None

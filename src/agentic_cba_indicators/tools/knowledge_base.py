@@ -439,15 +439,15 @@ def search_indicators(
             # Semantic search (either no exact term, or exact match found nothing)
             query_embedding = _get_embedding(query)
 
-            results = collection.query(
-                query_embeddings=[query_embedding],
+            query_results = collection.query(
+                query_embeddings=[query_embedding],  # type: ignore[arg-type]
                 n_results=n_results,
                 include=["documents", "metadatas", "distances"],
             )
 
-            docs = (results.get("documents") or [[]])[0]
-            metas = (results.get("metadatas") or [[]])[0]
-            dists = (results.get("distances") or [[]])[0]
+            docs = (query_results.get("documents") or [[]])[0]
+            metas = (query_results.get("metadatas") or [[]])[0]
+            dists = cast("list[float]", (query_results.get("distances") or [[]])[0])
 
         if rerank and not exact_term:
             docs, metas, dists = _rerank_results(query, docs, metas, dists)
@@ -537,7 +537,7 @@ def search_methods(
         query_embedding = _get_embedding(query)
 
         # Build query with optional OA filter
-        query_kwargs = {
+        query_kwargs: dict[str, Any] = {
             "query_embeddings": [query_embedding],
             "n_results": n_results,
             "include": ["documents", "metadatas", "distances"],
@@ -545,7 +545,7 @@ def search_methods(
         if oa_only:
             query_kwargs["where"] = {"has_oa_citations": True}
 
-        results = collection.query(**query_kwargs)
+        results = collection.query(**query_kwargs)  # type: ignore[arg-type]
 
         docs = results.get("documents") or [[]]
         metas = results.get("metadatas") or [[]]
@@ -871,7 +871,7 @@ def search_usecases(
         query_embedding = _get_embedding(query)
 
         results = collection.query(
-            query_embeddings=[query_embedding],
+            query_embeddings=[query_embedding],  # type: ignore[arg-type]
             n_results=n_results,
             include=["documents", "metadatas", "distances"],
         )
@@ -1054,7 +1054,7 @@ def _resolve_indicator_id(indicator: str | int) -> tuple[int | None, str | None]
     collection = _get_collection("indicators")
 
     query_results = collection.query(
-        query_embeddings=[query_embedding],
+        query_embeddings=[query_embedding],  # type: ignore[arg-type]
         n_results=1,
         include=["metadatas", "documents", "distances"],
     )

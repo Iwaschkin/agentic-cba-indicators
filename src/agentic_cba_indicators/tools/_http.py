@@ -177,6 +177,7 @@ def fetch_json(
     """
     should_close = client is None
     client = client or create_client()
+    assert client is not None  # Guaranteed by line above
 
     last_error: Exception | None = None
 

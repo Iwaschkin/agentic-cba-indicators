@@ -63,3 +63,6 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+tmpclaude-*-cwd
+repomix-output.xml

@@ -104,6 +104,9 @@ def create_agent_from_config(
 
     # Configure conversation memory
     # Use token-budget manager if context_budget is set, otherwise fall back to sliding window
+    conversation_manager: (
+        TokenBudgetConversationManager | SlidingWindowConversationManager
+    )
     if agent_config.context_budget is not None:
         conversation_manager = TokenBudgetConversationManager(
             max_tokens=agent_config.context_budget,

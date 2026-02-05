@@ -31,7 +31,7 @@ def test_gemini_top_p_forwarded(monkeypatch) -> None:
 
     model = create_model(provider_config)
 
-    assert model.params["top_p"] == 0.9
+    assert model.params["top_p"] == 0.9  # type: ignore[attr-defined]
     model = create_model(provider_config)
 
-    assert model.params["top_p"] == 0.9
+    assert model.params["top_p"] == 0.9  # type: ignore[attr-defined]
